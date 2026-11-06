@@ -35,6 +35,11 @@ const STRINGS = {
     addSelected: (n) => (n ? `Lägg valda i inköpslistan (${n})` : "Välj ingredienser att handla"),
     selectHint: "Bocka i det du vill handla. Det som saknas hemma är förvalt.",
     cooked: "Lagad",
+    cookingMode: "🍳 Matlagningsläge",
+    cookingOn: "🍳 Matlagningsläge på",
+    cookingActive: "Skärmen hålls tänd medan receptet är öppet.",
+    wakeNeedsHttps: "Matlagningsläget kräver att Home Assistant öppnas via https (t.ex. https://homeassistant.athornblom.se).",
+    wakeUnsupported: "Den här webbläsaren kan inte hålla skärmen tänd.",
     cookedDone: "Markerad som lagad. Hemma uppdateras med det som gick åt.",
     ingredients: "Ingredienser",
     steps: "Gör så här",
@@ -84,6 +89,11 @@ const STRINGS = {
     addSelected: (n) => (n ? `Add selected to shopping list (${n})` : "Pick ingredients to buy"),
     selectHint: "Tick what you want to buy. What's missing at home is preselected.",
     cooked: "Cooked",
+    cookingMode: "🍳 Cooking mode",
+    cookingOn: "🍳 Cooking mode on",
+    cookingActive: "The screen stays on while the recipe is open.",
+    wakeNeedsHttps: "Cooking mode needs Home Assistant to be opened over https.",
+    wakeUnsupported: "This browser can't keep the screen on.",
     cookedDone: "Marked as cooked. At home is being updated with what was used.",
     ingredients: "Ingredients",
     steps: "Steps",
@@ -486,6 +496,13 @@ class FoodPlanningRecipeDialog extends HTMLElement {
     this._onKey = (ev) => {
       if (ev.key === "Escape" && !this._editing) this.close();
     };
+    // Browsers drop the wake lock when the page is hidden; take it again
+    // when it's visible while cooking mode is on.
+    this._onVisibility = () => {
+      if (this._cooking && !this._wakeLock && document.visibilityState === "visible") {
+        this._requestWakeLock();
+      }
+    };
   }
 
   setup({ hass, t, uid, recipes, categories, onClose }) {
@@ -498,10 +515,50 @@ class FoodPlanningRecipeDialog extends HTMLElement {
 
   connectedCallback() {
     document.addEventListener("keydown", this._onKey);
+    document.addEventListener("visibilitychange", this._onVisibility);
   }
 
   disconnectedCallback() {
     document.removeEventListener("keydown", this._onKey);
+    document.removeEventListener("visibilitychange", this._onVisibility);
+    this._stopCooking();
+  }
+
+  async _requestWakeLock() {
+    try {
+      const lock = await navigator.wakeLock.request("screen");
+      lock.addEventListener("release", () => {
+        if (this._wakeLock === lock) this._wakeLock = null;
+      });
+      this._wakeLock = lock;
+      return true;
+    } catch (err) {
+      this._setStatus(errorMessage(err), true);
+      return false;
+    }
+  }
+
+  async _toggleCooking() {
+    const t = this._t;
+    if (this._cooking) {
+      this._stopCooking();
+      this._setStatus("");
+    } else if (!("wakeLock" in navigator)) {
+      this._setStatus(window.isSecureContext ? t.wakeUnsupported : t.wakeNeedsHttps, true);
+      return;
+    } else if (await this._requestWakeLock()) {
+      this._cooking = true;
+      this._setStatus(t.cookingActive);
+    }
+    this._render();
+  }
+
+  _stopCooking() {
+    this._cooking = false;
+    if (this._wakeLock) {
+      this._wakeLock.release().catch(() => {});
+      this._wakeLock = null;
+    }
   }
 
   close() {
@@ -519,9 +576,7 @@ class FoodPlanningRecipeDialog extends HTMLElement {
     this._recipe = recipe;
     // Don't throw away what the user is typing when data changes elsewhere.
     if (this._editing) return;
-    const status = this._statusText;
     this._render();
-    if (status) this._setStatus(status.text, status.isError);
   }
 
   _setStatus(text, isError = false) {
@@ -614,8 +669,11 @@ class FoodPlanningRecipeDialog extends HTMLElement {
   }
 
   _render() {
+    // Keep a status message across re-renders (data updates, toggles).
+    const status = this._statusText;
     if (this._editing) this._renderEdit();
     else this._renderView();
+    if (status) this._setStatus(status.text, status.isError);
   }
 
   _shell(...content) {
@@ -737,10 +795,17 @@ class FoodPlanningRecipeDialog extends HTMLElement {
     );
     const cookedButton = el("button", { cls: "secondary", text: `✓ ${t.cooked}` });
     cookedButton.addEventListener("click", () => this._markCooked(cookedButton));
+    const cookingButton = el("button", {
+      cls: this._cooking ? "" : "secondary",
+      text: this._cooking ? t.cookingOn : t.cookingMode,
+      attrs: { "aria-pressed": String(Boolean(this._cooking)) },
+    });
+    cookingButton.addEventListener("click", () => this._toggleCooking());
     const actions = el(
       "div",
       { cls: "actions" },
       addButton,
+      cookingButton,
       cookedButton,
       el("span", { cls: "spacer" })
     );

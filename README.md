@@ -95,6 +95,8 @@ type: custom:food-planning-card
 - **Pick what to buy:** in the recipe view every ingredient has a checkbox;
   what's missing at home is preselected. **Lägg valda i inköpslistan**
   adds exactly the ticked ones.
+- **🍳 Matlagningsläge** keeps the screen on while the recipe is open
+  (browser Wake Lock; needs Home Assistant opened over https).
 - **Lagad** marks a recipe as cooked and has the AI subtract what it used
   from At home.
 - Search by recipe name or ingredient, and filter by status or category.
