@@ -24,7 +24,11 @@ from .const import (
     SERVICE_ADD_TO_SHOPPING_LIST,
     SERVICE_IMPORT_RECIPE,
 )
-from .data import FoodPlanningConfigEntry, async_import_recipe
+from .data import (
+    FoodPlanningConfigEntry,
+    async_add_recipe_to_shopping,
+    async_import_recipe,
+)
 
 IMPORT_SCHEMA = vol.All(
     vol.Schema(
@@ -84,7 +88,7 @@ def async_setup_services(hass: HomeAssistant) -> None:
                 translation_key="recipe_not_found",
                 translation_placeholders={"recipe": call.data[ATTR_RECIPE]},
             )
-        added = store.add_recipe_to_shopping(recipe)
+        added = async_add_recipe_to_shopping(entry, recipe)
         await store.async_save()
         return {"added": added} if call.return_response else None
 

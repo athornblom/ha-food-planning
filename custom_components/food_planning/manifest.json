@@ -4,12 +4,12 @@
   "after_dependencies": ["ai_task"],
   "codeowners": ["@athornblom"],
   "config_flow": true,
-  "dependencies": ["todo"],
+  "dependencies": ["frontend", "http", "todo", "websocket_api"],
   "documentation": "https://github.com/athornblom/ha-food-planning",
   "integration_type": "service",
   "iot_class": "calculated",
   "issue_tracker": "https://github.com/athornblom/ha-food-planning/issues",
   "requirements": [],
   "single_config_entry": true,
-  "version": "0.2.1"
+  "version": "0.3.0"
 }

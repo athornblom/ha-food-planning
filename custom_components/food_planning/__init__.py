@@ -2,46 +2,84 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
+from homeassistant.components.frontend import add_extra_js_url
+from homeassistant.components.http import StaticPathConfig
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers import config_validation as cv, entity_registry as er
 from homeassistant.helpers.typing import ConfigType
+from homeassistant.loader import async_get_integration
 
-from .const import DOMAIN
+from .const import CARD_FILENAME, DOMAIN, FRONTEND_URL, IMAGES_URL, REMOVED_ENTITIES
 from .data import FoodPlanningConfigEntry, FoodPlanningData
+from .images import async_delete_all_images, ensure_images_dir
+from .merge import ShoppingMerger
 from .services import async_setup_services
 from .store import FoodPlanningStore
+from .websocket import async_setup_websocket
 
-PLATFORMS = [Platform.BUTTON, Platform.SELECT, Platform.TEXT, Platform.TODO]
+PLATFORMS = [Platform.TODO]
 
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
 
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
-    """Register the integration's actions."""
+    """Register actions, the websocket API, the recipe card and image folder."""
     async_setup_services(hass)
+    async_setup_websocket(hass)
+
+    images = await hass.async_add_executor_job(ensure_images_dir, hass)
+    await hass.http.async_register_static_paths(
+        [
+            StaticPathConfig(
+                FRONTEND_URL,
+                str(Path(__file__).parent / "frontend"),
+                cache_headers=False,
+            ),
+            StaticPathConfig(IMAGES_URL, str(images), cache_headers=True),
+        ]
+    )
+    # Versioned URL so browsers fetch the card again after an update.
+    integration = await async_get_integration(hass, DOMAIN)
+    add_extra_js_url(hass, f"{FRONTEND_URL}/{CARD_FILENAME}?v={integration.version}")
     return True
 
 
 async def async_setup_entry(
     hass: HomeAssistant, entry: FoodPlanningConfigEntry
 ) -> bool:
-    """Load stored recipes and set up the entities."""
+    """Load stored data and set up the shopping list."""
+    _remove_old_entities(hass, entry)
     store = await FoodPlanningStore.async_create(hass)
-    entry.runtime_data = FoodPlanningData(store=store)
+    merger = ShoppingMerger(hass, entry)
+    entry.async_on_unload(merger.async_cancel)
+    entry.runtime_data = FoodPlanningData(store=store, merger=merger)
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     return True
+
+
+def _remove_old_entities(hass: HomeAssistant, entry: FoodPlanningConfigEntry) -> None:
+    """Drop entities that earlier versions created and the recipe card replaced."""
+    registry = er.async_get(hass)
+    for platform, key in REMOVED_ENTITIES:
+        if entity_id := registry.async_get_entity_id(
+            platform, DOMAIN, f"{entry.entry_id}_{key}"
+        ):
+            registry.async_remove(entity_id)
 
 
 async def async_unload_entry(
     hass: HomeAssistant, entry: FoodPlanningConfigEntry
 ) -> bool:
-    """Unload the entities."""
+    """Unload the shopping list."""
     return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
 
 
 async def async_remove_entry(
     hass: HomeAssistant, entry: FoodPlanningConfigEntry
 ) -> None:
-    """Delete stored recipes and the shopping list when the entry is deleted."""
+    """Delete recipes, the shopping list and saved images."""
     await FoodPlanningStore(hass).async_remove()
+    await async_delete_all_images(hass)

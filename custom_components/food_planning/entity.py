@@ -25,7 +25,7 @@ class FoodPlanningEntity(Entity):
         self.entity_id = f"{platform}.{DOMAIN}_{key}"
 
     async def async_added_to_hass(self) -> None:
-        """Update whenever recipes or the shopping list change."""
+        """Update whenever the stored data changes."""
         self.async_on_remove(
             self._data.store.async_add_listener(self.async_write_ha_state)
         )

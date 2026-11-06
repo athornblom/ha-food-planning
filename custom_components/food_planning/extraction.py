@@ -327,6 +327,39 @@ def _as_optional_text(value: Any) -> str | None:
     return str(value).strip() or None if value else None
 
 
+async def async_generate_data(
+    hass: HomeAssistant,
+    *,
+    task_name: str,
+    instructions: str,
+    structure: dict[str, Any],
+    ai_task_entity: str | None,
+) -> dict[str, Any]:
+    """Run ai_task.generate_data and return its structured data."""
+    service_data: dict[str, Any] = {
+        "task_name": task_name,
+        "instructions": instructions,
+        "structure": structure,
+    }
+    if ai_task_entity:
+        service_data["entity_id"] = ai_task_entity
+    try:
+        response = await hass.services.async_call(
+            "ai_task",
+            "generate_data",
+            service_data,
+            blocking=True,
+            return_response=True,
+        )
+    except ServiceNotFound as err:
+        raise _error("ai_task_missing") from err
+
+    data = (response or {}).get("data")
+    if not isinstance(data, dict):
+        raise _error("ai_task_bad_response")
+    return data
+
+
 async def async_extract_recipe(
     hass: HomeAssistant,
     source: RecipeSource,
@@ -345,32 +378,17 @@ async def async_extract_recipe(
         )
         content = content[:MAX_CONTENT_CHARS]
 
-    service_data: dict[str, Any] = {
-        "task_name": "Food Planning recipe import",
-        "instructions": INSTRUCTIONS.format(
+    data = await async_generate_data(
+        hass,
+        task_name="Food Planning recipe import",
+        instructions=INSTRUCTIONS.format(
             language=language,
             source=source.url or "text pasted by the user",
             content=content,
         ),
-        "structure": RECIPE_STRUCTURE,
-    }
-    if ai_task_entity:
-        service_data["entity_id"] = ai_task_entity
-
-    try:
-        response = await hass.services.async_call(
-            "ai_task",
-            "generate_data",
-            service_data,
-            blocking=True,
-            return_response=True,
-        )
-    except ServiceNotFound as err:
-        raise _error("ai_task_missing") from err
-
-    data = (response or {}).get("data")
-    if not isinstance(data, dict):
-        raise _error("ai_task_bad_response")
+        structure=RECIPE_STRUCTURE,
+        ai_task_entity=ai_task_entity,
+    )
     if not data.get("is_recipe"):
         raise _error("no_recipe_found")
 

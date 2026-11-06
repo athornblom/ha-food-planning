@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import asdict, dataclass, field, fields
-import re
 from typing import Any, Self
 from uuid import uuid4
 
@@ -12,23 +11,10 @@ from homeassistant.core import CALLBACK_TYPE, HomeAssistant, callback
 from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 
-from .const import (
-    HEADING_INGREDIENTS,
-    HEADING_STEPS,
-    INGREDIENT_HEADINGS,
-    LABEL_SOURCE,
-    STEP_HEADINGS,
-    STORAGE_KEY,
-    STORAGE_VERSION,
-)
+from .const import STORAGE_KEY, STORAGE_VERSION
 
 STATUS_NEEDS_ACTION = "needs_action"
 STATUS_COMPLETED = "completed"
-
-_HEADING_RE = re.compile(r"^#{1,6}\s*(.+?)\s*:?\s*$")
-_BULLET_RE = re.compile(r"^\s*(?:[-*•]|\d+[.)])\s+")
-_SERVINGS_RE = re.compile(r"^\*\*(.+)\*\*$")
-_SOURCE_RE = re.compile(rf"^\[{LABEL_SOURCE}\]\((\S+)\)$")
 
 
 def _new_uid() -> str:
@@ -51,88 +37,13 @@ class Recipe:
     servings: str | None = None
     notes: str | None = None
     source_url: str | None = None
+    # Remote image the recipe came with, and the local copy saved at import
+    # (a file name in the images folder). The local copy is preferred:
+    # remote links, e.g. TikTok's, can expire.
     image_url: str | None = None
-    cooked: bool = False
+    image: str | None = None
     uid: str = field(default_factory=_new_uid)
     created: str = field(default_factory=lambda: dt_util.utcnow().isoformat())
-
-    def to_markdown(self) -> str:
-        """Render the recipe as the description of a to-do item."""
-        parts: list[str] = []
-        if self.servings:
-            parts.append(f"**{self.servings}**")
-        if self.ingredients:
-            lines = "\n".join(f"- {i}" for i in self.ingredients)
-            parts.append(f"### {HEADING_INGREDIENTS}\n{lines}")
-        if self.steps:
-            lines = "\n".join(f"{n}. {s}" for n, s in enumerate(self.steps, 1))
-            parts.append(f"### {HEADING_STEPS}\n{lines}")
-        if self.notes:
-            parts.append(self.notes)
-        if self.source_url:
-            parts.append(f"[{LABEL_SOURCE}]({self.source_url})")
-        return "\n\n".join(parts)
-
-    def apply_markdown(self, text: str) -> None:
-        """Update the recipe from a hand-edited description.
-
-        Lines under an ingredients heading become ingredients, lines under a
-        steps heading become steps, and everything else becomes notes. Free
-        text without headings therefore ends up in notes.
-        """
-        servings: str | None = None
-        source: str | None = None
-        ingredients: list[str] = []
-        steps: list[str] = []
-        notes: list[str] = []
-        section: str | None = None
-        # A section ends at a blank line followed by a line that is not a
-        # list item, so notes written after the steps stay notes.
-        blank_in_section = False
-
-        for raw in text.splitlines():
-            line = raw.strip()
-            if heading := _HEADING_RE.match(line):
-                name = heading.group(1).strip().casefold()
-                blank_in_section = False
-                if name in INGREDIENT_HEADINGS:
-                    section = "ingredients"
-                    continue
-                if name in STEP_HEADINGS:
-                    section = "steps"
-                    continue
-                section = None
-            if not line:
-                if section is not None:
-                    blank_in_section = True
-                elif notes and notes[-1]:
-                    notes.append("")
-                continue
-            if source_match := _SOURCE_RE.match(line):
-                source = source_match.group(1)
-                continue
-            if section and blank_in_section and not _BULLET_RE.match(line):
-                section = None
-            blank_in_section = False
-            if section == "ingredients":
-                ingredients.append(_BULLET_RE.sub("", line))
-            elif section == "steps":
-                steps.append(_BULLET_RE.sub("", line))
-            elif (
-                servings is None
-                and not notes
-                and not ingredients
-                and (m := _SERVINGS_RE.match(line))
-            ):
-                servings = m.group(1)
-            else:
-                notes.append(line)
-
-        self.servings = servings
-        self.ingredients = ingredients
-        self.steps = steps
-        self.notes = "\n".join(notes).strip() or None
-        self.source_url = source
 
 
 @dataclass
@@ -141,6 +52,7 @@ class ShoppingItem:
 
     summary: str
     status: str = STATUS_NEEDS_ACTION
+    # Which recipe(s) the item is for, shown under the item.
     description: str | None = None
     recipe_uid: str | None = None
     uid: str = field(default_factory=_new_uid)
@@ -168,7 +80,7 @@ class FoodPlanningStore:
         return store
 
     async def async_save(self) -> None:
-        """Persist all data and notify listening entities."""
+        """Persist all data and notify listeners."""
         await self._store.async_save(
             {
                 "recipes": [asdict(r) for r in self.recipes],
@@ -189,7 +101,8 @@ class FoodPlanningStore:
 
         @callback
         def _remove() -> None:
-            self._listeners.remove(listener)
+            if listener in self._listeners:
+                self._listeners.remove(listener)
 
         return _remove
 
@@ -210,9 +123,12 @@ class FoodPlanningStore:
         """Add a recipe at the top of the list."""
         self.recipes.insert(0, recipe)
 
-    def delete_recipes(self, uids: set[str]) -> None:
-        """Delete recipes."""
-        self.recipes = [r for r in self.recipes if r.uid not in uids]
+    def delete_recipe(self, uid: str) -> Recipe | None:
+        """Delete a recipe and return it, or None if it didn't exist."""
+        recipe = self.get_recipe(uid)
+        if recipe is not None:
+            self.recipes.remove(recipe)
+        return recipe
 
     # Shopping list
 
@@ -220,29 +136,27 @@ class FoodPlanningStore:
         """Return the shopping item with this uid."""
         return next((s for s in self.shopping if s.uid == uid), None)
 
-    def add_recipe_to_shopping(self, recipe: Recipe) -> int:
-        """Add a recipe's ingredients, skipping ones already open on the list.
+    def open_shopping_items(self) -> list[ShoppingItem]:
+        """Return items that haven't been ticked off."""
+        return [s for s in self.shopping if s.status == STATUS_NEEDS_ACTION]
 
-        Returns the number of items added.
+    def add_recipe_to_shopping(self, recipe: Recipe) -> list[ShoppingItem]:
+        """Add a recipe's ingredients, skipping exact copies of open items.
+
+        Near-duplicates ("2 msk olivolja" vs "15 ml olivolja") are merged
+        afterwards by the AI, see merge.py. Returns the items added.
         """
-        open_items = {
-            s.summary.casefold()
-            for s in self.shopping
-            if s.status == STATUS_NEEDS_ACTION
-        }
-        added = 0
+        open_items = {s.summary.casefold() for s in self.open_shopping_items()}
+        added: list[ShoppingItem] = []
         for ingredient in recipe.ingredients:
             if ingredient.casefold() in open_items:
                 continue
-            self.shopping.append(
-                ShoppingItem(
-                    summary=ingredient,
-                    description=recipe.title,
-                    recipe_uid=recipe.uid,
-                )
+            item = ShoppingItem(
+                summary=ingredient, description=recipe.title, recipe_uid=recipe.uid
             )
+            self.shopping.append(item)
+            added.append(item)
             open_items.add(ingredient.casefold())
-            added += 1
         return added
 
     def delete_shopping_items(self, uids: set[str]) -> None:

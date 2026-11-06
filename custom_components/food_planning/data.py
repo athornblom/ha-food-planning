@@ -1,21 +1,17 @@
-"""Runtime data and the recipe import flow shared by services and entities."""
+"""Runtime data and the recipe flows shared by services and the websocket API."""
 
 from __future__ import annotations
 
-from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import CALLBACK_TYPE, HomeAssistant, callback
+from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 
 from .const import CONF_AI_TASK_ENTITY, CONF_LANGUAGE, DEFAULT_LANGUAGE, DOMAIN
-from .extraction import (
-    ExtractedRecipe,
-    RecipeSource,
-    async_extract_recipe,
-    async_fetch_source,
-)
+from .extraction import RecipeSource, async_extract_recipe, async_fetch_source
+from .images import async_delete_image, async_save_image
+from .merge import ShoppingMerger
 from .store import FoodPlanningStore, Recipe
 
 type FoodPlanningConfigEntry = ConfigEntry[FoodPlanningData]
@@ -23,65 +19,10 @@ type FoodPlanningConfigEntry = ConfigEntry[FoodPlanningData]
 
 @dataclass
 class FoodPlanningData:
-    """Everything the integration's entities and services share."""
+    """Everything the integration's entity, services and API share."""
 
     store: FoodPlanningStore
-    # Dashboard input state. Not persisted: it only lives until a restart.
-    url_input: str = ""
-    selected_recipe_uid: str | None = None
-    _ui_listeners: list[Callable[[], None]] = field(default_factory=list)
-
-    @callback
-    def async_add_ui_listener(self, listener: Callable[[], None]) -> CALLBACK_TYPE:
-        """Call listener when the dashboard input state changes."""
-        self._ui_listeners.append(listener)
-
-        @callback
-        def _remove() -> None:
-            self._ui_listeners.remove(listener)
-
-        return _remove
-
-    @callback
-    def async_notify_ui(self) -> None:
-        """Tell entities that show dashboard input state to update."""
-        for listener in list(self._ui_listeners):
-            listener()
-
-
-async def _async_extract(
-    hass: HomeAssistant, entry: FoodPlanningConfigEntry, source: RecipeSource
-) -> ExtractedRecipe:
-    return await async_extract_recipe(
-        hass,
-        source,
-        language=entry.options.get(CONF_LANGUAGE, DEFAULT_LANGUAGE),
-        ai_task_entity=entry.options.get(CONF_AI_TASK_ENTITY),
-    )
-
-
-async def async_structure_pasted_text(
-    hass: HomeAssistant, entry: FoodPlanningConfigEntry, recipe: Recipe
-) -> bool:
-    """Turn a recipe's pasted free text into ingredients and steps, in place.
-
-    Used when someone pastes a recipe into a to-do item's description.
-    Returns False, leaving the recipe untouched, when the text isn't a
-    recipe (for example a short personal note).
-    """
-    text = f"{recipe.title}\n\n{recipe.notes or ''}".strip()
-    try:
-        extracted = await _async_extract(hass, entry, RecipeSource(text=text))
-    except HomeAssistantError as err:
-        if err.translation_key == "no_recipe_found":
-            return False
-        raise
-    recipe.ingredients = extracted.ingredients
-    recipe.steps = extracted.steps
-    recipe.servings = extracted.servings
-    recipe.notes = extracted.notes
-    recipe.title = recipe.title or extracted.title
-    return True
+    merger: ShoppingMerger
 
 
 async def async_import_recipe(
@@ -102,7 +43,12 @@ async def async_import_recipe(
             translation_domain=DOMAIN, translation_key="missing_input"
         )
 
-    extracted = await _async_extract(hass, entry, source)
+    extracted = await async_extract_recipe(
+        hass,
+        source,
+        language=entry.options.get(CONF_LANGUAGE, DEFAULT_LANGUAGE),
+        ai_task_entity=entry.options.get(CONF_AI_TASK_ENTITY),
+    )
     recipe = Recipe(
         title=extracted.title,
         ingredients=extracted.ingredients,
@@ -112,13 +58,35 @@ async def async_import_recipe(
         source_url=source.url,
         image_url=source.image_url,
     )
+    recipe.image = await async_save_image(hass, recipe.uid, source.image_url)
 
     data = entry.runtime_data
     data.store.add_recipe(recipe)
     if add_to_shopping_list:
-        data.store.add_recipe_to_shopping(recipe)
+        async_add_recipe_to_shopping(entry, recipe)
     await data.store.async_save()
-
-    data.selected_recipe_uid = recipe.uid
-    data.async_notify_ui()
     return recipe
+
+
+def async_add_recipe_to_shopping(entry: FoodPlanningConfigEntry, recipe: Recipe) -> int:
+    """Add a recipe's ingredients and schedule a duplicate merge.
+
+    The caller saves the store. Returns the number of items added.
+    """
+    data = entry.runtime_data
+    added = data.store.add_recipe_to_shopping(recipe)
+    data.merger.async_schedule(item.uid for item in added)
+    return len(added)
+
+
+async def async_delete_recipe(
+    hass: HomeAssistant, entry: FoodPlanningConfigEntry, uid: str
+) -> bool:
+    """Delete a recipe and its saved image. Returns False if it didn't exist."""
+    store = entry.runtime_data.store
+    recipe = store.delete_recipe(uid)
+    if recipe is None:
+        return False
+    await store.async_save()
+    await async_delete_image(hass, recipe.image)
+    return True
