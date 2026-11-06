@@ -796,3 +796,104 @@ if (!customElements.get("food-planning-card")) {
     description: "Recipes from the Food Planning integration.",
   });
 }
+
+/*
+ * Dashboard strategy: generates the whole Food Planning dashboard, so it
+ * ships with (and is updated by) the integration.
+ *
+ *   strategy:
+ *     type: custom:food-planning
+ *     # language: sv     # sv (default) or en
+ *
+ * "Take control" in the dashboard menu turns it into an ordinary,
+ * editable dashboard (which then no longer follows updates).
+ */
+const DASHBOARD_STRINGS = {
+  sv: {
+    shopping: "Inköpslista",
+    pantry: "Hemma",
+    recipes: "Recept",
+    moveHome: "Flytta inhandlat till Hemma",
+    moveHomeConfirm: "Flytta allt som är avbockat till Hemma?",
+  },
+  en: {
+    shopping: "Shopping list",
+    pantry: "At home",
+    recipes: "Recipes",
+    moveHome: "Move bought items home",
+    moveHomeConfirm: "Move everything ticked off to At home?",
+  },
+};
+
+/** Find one of the integration's to-do lists, by its translation key. */
+function findListEntity(hass, key, fallback) {
+  const entry = Object.values(hass?.entities || {}).find(
+    (e) => e.platform === DOMAIN && e.translation_key === key
+  );
+  return entry ? entry.entity_id : fallback;
+}
+
+// HA finds a custom dashboard strategy by the element name
+// ll-strategy-dashboard-<type> and calls its static generate(config, hass).
+class FoodPlanningDashboardStrategy extends HTMLElement {
+  static async generate(config, hass) {
+    const t = DASHBOARD_STRINGS[config?.language] || DASHBOARD_STRINGS.sv;
+    const shopping = findListEntity(hass, "shopping_list", "todo.food_planning_shopping_list");
+    const pantry = findListEntity(hass, "pantry", "todo.food_planning_pantry");
+    const listView = (title, path, cards) => ({
+      title,
+      path,
+      type: "sections",
+      max_columns: 2,
+      sections: [{ type: "grid", column_span: 2, cards }],
+    });
+    return {
+      views: [
+        listView(t.shopping, "inkopslista", [
+          {
+            type: "shortcut",
+            label: t.moveHome,
+            icon: "mdi:home-import-outline",
+            tap_action: {
+              action: "perform-action",
+              perform_action: `${DOMAIN}.move_bought_to_pantry`,
+              confirmation: { text: t.moveHomeConfirm },
+            },
+          },
+          { type: "todo-list", entity: shopping, title: t.shopping },
+        ]),
+        listView(t.pantry, "hemma", [{ type: "todo-list", entity: pantry, title: t.pantry }]),
+        {
+          title: t.recipes,
+          path: "recept",
+          type: "sections",
+          max_columns: 3,
+          sections: [
+            {
+              type: "grid",
+              column_span: 3,
+              cards: [
+                {
+                  type: "custom:food-planning-card",
+                  title: t.recipes,
+                  ...(config?.language ? { language: config.language } : {}),
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+  }
+}
+
+if (!customElements.get("ll-strategy-dashboard-food-planning")) {
+  customElements.define("ll-strategy-dashboard-food-planning", FoodPlanningDashboardStrategy);
+  window.customStrategies = window.customStrategies || [];
+  window.customStrategies.push({
+    type: "food-planning",
+    strategyType: "dashboard",
+    name: "Food Planning",
+    description: "Shopping list, At home and recipes from the Food Planning integration.",
+  });
+}
