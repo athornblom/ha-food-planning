@@ -27,7 +27,12 @@ from .const import (
     DEFAULT_MERGE_SHOPPING,
 )
 from .extraction import async_generate_data
-from .store import STATUS_NEEDS_ACTION, FoodPlanningStore, ShoppingItem
+from .store import (
+    RECIPE_SEPARATOR,
+    STATUS_NEEDS_ACTION,
+    FoodPlanningStore,
+    ShoppingItem,
+)
 
 if TYPE_CHECKING:
     from .data import FoodPlanningConfigEntry
@@ -37,7 +42,6 @@ _LOGGER = logging.getLogger(__name__)
 # Wait this long after the last addition, so several quick additions (a
 # whole recipe, or a few items by voice) are merged in one AI call.
 DEBOUNCE_SECONDS = 2.0
-RECIPE_SEPARATOR = " · "
 
 MERGE_STRUCTURE: dict[str, Any] = {
     "groups": {
@@ -135,6 +139,9 @@ def apply_groups(
             keep = items[0]
             keep.summary = text
             keep.description = _merge_descriptions(items)
+            keep.recipe_uids = list(
+                dict.fromkeys(uid for item in items for uid in item.recipe_uids)
+            )
             store.delete_shopping_items({item.uid for item in items[1:]})
             used.update(keys)
             merged += 1

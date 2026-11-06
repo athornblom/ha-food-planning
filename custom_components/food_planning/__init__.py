@@ -14,7 +14,7 @@ from homeassistant.loader import async_get_integration
 
 from .const import CARD_FILENAME, DOMAIN, FRONTEND_URL, IMAGES_URL, REMOVED_ENTITIES
 from .data import FoodPlanningConfigEntry, FoodPlanningData
-from .images import async_delete_all_images, ensure_images_dir
+from .images import async_delete_all_images, async_repair_images, ensure_images_dir
 from .merge import ShoppingMerger
 from .services import async_setup_services
 from .store import FoodPlanningStore
@@ -57,6 +57,9 @@ async def async_setup_entry(
     entry.async_on_unload(merger.async_cancel)
     entry.runtime_data = FoodPlanningData(store=store, merger=merger)
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    entry.async_create_background_task(
+        hass, async_repair_images(hass, store), "food_planning image repair"
+    )
     return True
 
 

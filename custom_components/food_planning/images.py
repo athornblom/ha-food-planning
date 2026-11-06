@@ -13,10 +13,13 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .const import DOMAIN, IMAGES_URL
 from .extraction import FETCH_TIMEOUT, HEADERS
+from .store import FoodPlanningStore
 
 _LOGGER = logging.getLogger(__name__)
 
 MAX_IMAGE_BYTES = 5_000_000
+# Anything smaller is not a usable photo (e.g. a truncated download).
+MIN_IMAGE_BYTES = 2_000
 _EXTENSIONS = {
     "image/jpeg": "jpg",
     "image/png": "png",
@@ -54,18 +57,53 @@ async def async_save_image(
                     "Not saving image %s: %s %s", url, resp.status, resp.content_type
                 )
                 return None
-            data = await resp.content.read(MAX_IMAGE_BYTES + 1)
+            # Read the whole body in chunks. (content.read(n) returns only
+            # what has arrived so far, which truncated images in 0.3.0.)
+            data = bytearray()
+            async for chunk in resp.content.iter_chunked(64 * 1024):
+                data.extend(chunk)
+                if len(data) > MAX_IMAGE_BYTES:
+                    _LOGGER.debug(
+                        "Image %s is larger than %d bytes", url, MAX_IMAGE_BYTES
+                    )
+                    return None
     except (ClientError, TimeoutError) as err:
         _LOGGER.debug("Could not download image %s: %s", url, err)
         return None
-    if len(data) > MAX_IMAGE_BYTES:
-        _LOGGER.debug("Image %s is larger than %d bytes", url, MAX_IMAGE_BYTES)
+    if len(data) < MIN_IMAGE_BYTES:
+        _LOGGER.debug("Image %s is only %d bytes", url, len(data))
         return None
 
     name = f"{uid}.{extension}"
     path = images_dir(hass) / name
-    await hass.async_add_executor_job(path.write_bytes, data)
+    await hass.async_add_executor_job(path.write_bytes, bytes(data))
     return name
+
+
+async def async_repair_images(hass: HomeAssistant, store: FoodPlanningStore) -> None:
+    """Download images for recipes whose local copy is missing or broken.
+
+    Covers recipes imported before images were saved, and images that 0.3.0
+    saved truncated.
+    """
+
+    def _needs_repair(name: str | None) -> bool:
+        if not name:
+            return True
+        path = images_dir(hass) / name
+        return not path.is_file() or path.stat().st_size < MIN_IMAGE_BYTES
+
+    changed = False
+    for recipe in list(store.recipes):
+        if not recipe.image_url:
+            continue
+        if not await hass.async_add_executor_job(_needs_repair, recipe.image):
+            continue
+        if name := await async_save_image(hass, recipe.uid, recipe.image_url):
+            recipe.image = name
+            changed = True
+    if changed:
+        await store.async_save()
 
 
 async def async_delete_image(hass: HomeAssistant, name: str | None) -> None:

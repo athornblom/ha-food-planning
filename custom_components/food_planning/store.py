@@ -15,6 +15,8 @@ from .const import STORAGE_KEY, STORAGE_VERSION
 
 STATUS_NEEDS_ACTION = "needs_action"
 STATUS_COMPLETED = "completed"
+# Joins the recipe names shown under a shopping item.
+RECIPE_SEPARATOR = " · "
 
 
 def _new_uid() -> str:
@@ -42,6 +44,9 @@ class Recipe:
     # remote links, e.g. TikTok's, can expire.
     image_url: str | None = None
     image: str | None = None
+    # Set when the ingredients are added to the shopping list, cleared when
+    # the recipe is marked as cooked. Drives "ready to cook".
+    on_shopping_list: bool = False
     uid: str = field(default_factory=_new_uid)
     created: str = field(default_factory=lambda: dt_util.utcnow().isoformat())
 
@@ -52,10 +57,19 @@ class ShoppingItem:
 
     summary: str
     status: str = STATUS_NEEDS_ACTION
-    # Which recipe(s) the item is for, shown under the item.
+    # Which recipe(s) the item is for: names shown under the item, and uids
+    # used to tell when everything for a recipe has been bought.
     description: str | None = None
-    recipe_uid: str | None = None
+    recipe_uids: list[str] = field(default_factory=list)
     uid: str = field(default_factory=_new_uid)
+
+
+def _shopping_item_from_dict(data: dict[str, Any]) -> ShoppingItem:
+    item = _from_dict(ShoppingItem, data)
+    # Version 0.3 and earlier stored a single recipe_uid.
+    if not item.recipe_uids and data.get("recipe_uid"):
+        item.recipe_uids = [data["recipe_uid"]]
+    return item
 
 
 class FoodPlanningStore:
@@ -76,8 +90,26 @@ class FoodPlanningStore:
         store = cls(hass)
         data = await store._store.async_load() or {}
         store.recipes = [_from_dict(Recipe, r) for r in data.get("recipes", [])]
-        store.shopping = [_from_dict(ShoppingItem, s) for s in data.get("shopping", [])]
+        store.shopping = [_shopping_item_from_dict(s) for s in data.get("shopping", [])]
+        store._link_items_by_name()
         return store
+
+    def _link_items_by_name(self) -> None:
+        """Link items to recipes named in their description.
+
+        Items from version 0.3 and earlier only remember one recipe, even
+        after duplicates from several recipes were merged into them.
+        """
+        by_title = {r.title: r for r in self.recipes}
+        for item in self.shopping:
+            for name in (item.description or "").split(RECIPE_SEPARATOR):
+                recipe = by_title.get(name.strip())
+                if recipe and recipe.uid not in item.recipe_uids:
+                    item.recipe_uids.append(recipe.uid)
+        linked = {uid for item in self.shopping for uid in item.recipe_uids}
+        for recipe in self.recipes:
+            if recipe.uid in linked:
+                recipe.on_shopping_list = True
 
     async def async_save(self) -> None:
         """Persist all data and notify listeners."""
@@ -123,6 +155,25 @@ class FoodPlanningStore:
         """Add a recipe at the top of the list."""
         self.recipes.insert(0, recipe)
 
+    def update_recipe(self, uid: str, changes: dict[str, Any]) -> Recipe | None:
+        """Apply edited fields to a recipe. Returns None if it doesn't exist."""
+        recipe = self.get_recipe(uid)
+        if recipe is None:
+            return None
+        old_title = recipe.title
+        for key in ("title", "servings", "ingredients", "steps", "notes", "source_url"):
+            if key in changes:
+                setattr(recipe, key, changes[key])
+        if recipe.title != old_title:
+            # Keep the recipe names under shopping items in step.
+            for item in self.shopping:
+                if recipe.uid in item.recipe_uids and item.description:
+                    item.description = RECIPE_SEPARATOR.join(
+                        recipe.title if name == old_title else name
+                        for name in item.description.split(RECIPE_SEPARATOR)
+                    )
+        return recipe
+
     def delete_recipe(self, uid: str) -> Recipe | None:
         """Delete a recipe and return it, or None if it didn't exist."""
         recipe = self.get_recipe(uid)
@@ -146,18 +197,38 @@ class FoodPlanningStore:
         Near-duplicates ("2 msk olivolja" vs "15 ml olivolja") are merged
         afterwards by the AI, see merge.py. Returns the items added.
         """
-        open_items = {s.summary.casefold() for s in self.open_shopping_items()}
+        recipe.on_shopping_list = True
         added: list[ShoppingItem] = []
+        open_items: dict[str, ShoppingItem] = {
+            s.summary.casefold(): s for s in self.open_shopping_items()
+        }
         for ingredient in recipe.ingredients:
-            if ingredient.casefold() in open_items:
+            if existing := open_items.get(ingredient.casefold()):
+                if recipe.uid not in existing.recipe_uids:
+                    existing.recipe_uids.append(recipe.uid)
+                    existing.description = RECIPE_SEPARATOR.join(
+                        filter(None, [existing.description, recipe.title])
+                    )
                 continue
             item = ShoppingItem(
-                summary=ingredient, description=recipe.title, recipe_uid=recipe.uid
+                summary=ingredient, description=recipe.title, recipe_uids=[recipe.uid]
             )
             self.shopping.append(item)
             added.append(item)
-            open_items.add(ingredient.casefold())
+            open_items[ingredient.casefold()] = item
         return added
+
+    def recipe_shopping_status(self, recipe: Recipe) -> tuple[int, int]:
+        """Return (open, bought) shopping items for a recipe."""
+        open_count = bought = 0
+        for item in self.shopping:
+            if recipe.uid not in item.recipe_uids:
+                continue
+            if item.status == STATUS_NEEDS_ACTION:
+                open_count += 1
+            else:
+                bought += 1
+        return open_count, bought
 
     def delete_shopping_items(self, uids: set[str]) -> None:
         """Delete shopping items."""

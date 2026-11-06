@@ -44,8 +44,15 @@ type: custom:food-planning-card
 - Recipes show as a grid of images. Tap one for the full recipe: image,
   ingredients (tap to tick off while cooking), numbered steps, tips, a link
   to the source, and buttons to add the ingredients to the shopping list or
-  delete the recipe.
-- A search field appears once there are a handful of recipes.
+  delete the recipe (asks for confirmation).
+- The ✎ button edits a recipe: name, servings, ingredients and steps (one
+  per line), tips and source link.
+- Search by recipe name or ingredient, and filter by status:
+  - **🛒 N kvar att handla:** some of the recipe's items are still unticked
+    on the shopping list.
+  - **✓ Redo att laga:** everything added for the recipe has been ticked
+    off (bought). Stays after clearing ticked items, until you press
+    **Lagad** in the recipe.
 
 ### Shopping list
 
@@ -123,5 +130,5 @@ All can be changed later under the integration's **Configure** button.
 
 ## Roadmap
 
-- Editing recipes in the card.
+- Suggesting recipes from what's already at home.
 - Importing spoken-only videos via transcription.

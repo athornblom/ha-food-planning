@@ -6,8 +6,8 @@
  * Options: title (string), language ("sv" | "en", default "sv").
  *
  * Recipe text comes from web pages, so it is only ever inserted as text
- * (textContent), never as HTML, and links/images are limited to http(s)
- * and the integration's own image path.
+ * (textContent / input values), never as HTML, and links/images are limited
+ * to http(s) and the integration's own image path.
  */
 
 const STRINGS = {
@@ -18,8 +18,15 @@ const STRINGS = {
     importing: "Hämtar recept… det tar några sekunder.",
     imported: (title) => `”${title}” har lagts till.`,
     empty: "Inga recept än. Klistra in en länk eller en recepttext ovan.",
-    search: "Sök recept",
-    noMatch: "Inga recept matchar sökningen.",
+    search: "Sök recept eller ingrediens",
+    noMatch: "Inga recept matchar.",
+    filterAll: "Alla",
+    filterReady: "Redo att laga",
+    filterShopping: "Att handla",
+    toBuy: (n) => `🛒 ${n} kvar att handla`,
+    ready: "✓ Redo att laga",
+    readyLong: "Allt är inhandlat. Dags att laga!",
+    cooked: "Lagad",
     ingredients: "Ingredienser",
     steps: "Gör så här",
     notes: "Tips",
@@ -29,7 +36,17 @@ const STRINGS = {
         ? "Allt fanns redan på inköpslistan."
         : `${n} ${n === 1 ? "ingrediens" : "ingredienser"} lades till i inköpslistan.`,
     remove: "Ta bort",
-    confirmRemove: (title) => `Ta bort ”${title}”?`,
+    confirmRemove: "Ja, ta bort",
+    cancel: "Avbryt",
+    edit: "Redigera",
+    save: "Spara",
+    fieldTitle: "Namn",
+    fieldServings: "Portioner",
+    fieldIngredients: "Ingredienser (en per rad)",
+    fieldSteps: "Gör så här (ett steg per rad)",
+    fieldNotes: "Tips",
+    fieldSource: "Källa (länk)",
+    titleRequired: "Receptet behöver ett namn.",
     source: "Källa",
     close: "Stäng",
     notLoaded: "Food Planning är inte laddad.",
@@ -41,8 +58,15 @@ const STRINGS = {
     importing: "Fetching the recipe… this takes a few seconds.",
     imported: (title) => `“${title}” was added.`,
     empty: "No recipes yet. Paste a link or recipe text above.",
-    search: "Search recipes",
-    noMatch: "No recipes match the search.",
+    search: "Search recipes or ingredients",
+    noMatch: "No recipes match.",
+    filterAll: "All",
+    filterReady: "Ready to cook",
+    filterShopping: "To buy",
+    toBuy: (n) => `🛒 ${n} left to buy`,
+    ready: "✓ Ready to cook",
+    readyLong: "Everything is bought. Time to cook!",
+    cooked: "Cooked",
     ingredients: "Ingredients",
     steps: "Steps",
     notes: "Tips",
@@ -52,7 +76,17 @@ const STRINGS = {
         ? "Everything was already on the shopping list."
         : `${n} ${n === 1 ? "ingredient" : "ingredients"} added to the shopping list.`,
     remove: "Delete",
-    confirmRemove: (title) => `Delete “${title}”?`,
+    confirmRemove: "Yes, delete",
+    cancel: "Cancel",
+    edit: "Edit",
+    save: "Save",
+    fieldTitle: "Name",
+    fieldServings: "Servings",
+    fieldIngredients: "Ingredients (one per line)",
+    fieldSteps: "Steps (one per line)",
+    fieldNotes: "Tips",
+    fieldSource: "Source (link)",
+    titleRequired: "The recipe needs a name.",
     source: "Source",
     close: "Close",
     notLoaded: "Food Planning is not loaded.",
@@ -61,7 +95,6 @@ const STRINGS = {
 
 const DOMAIN = "food_planning";
 const URL_RE = /^https?:\/\/\S+$/;
-const SEARCH_FROM = 7; // show the search field once there are this many recipes
 
 function safeUrl(value) {
   if (!value) return null;
@@ -96,8 +129,15 @@ function errorMessage(err) {
   return (err && (err.message || err.error?.message)) || String(err);
 }
 
+function lines(text) {
+  return text
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+}
+
 const SHARED_CSS = `
-  :host { --fp-radius: var(--ha-card-border-radius, 12px); }
+  :host { --fp-radius: var(--ha-card-border-radius, 12px); --fp-danger: var(--error-color, #db4437); }
   button {
     font: inherit; cursor: pointer; border: none; border-radius: 999px;
     padding: 8px 16px; background: var(--primary-color); color: var(--text-primary-color, #fff);
@@ -106,14 +146,28 @@ const SHARED_CSS = `
     background: transparent; color: var(--primary-text-color);
     border: 1px solid var(--divider-color);
   }
+  button.danger { background: var(--fp-danger); color: #fff; }
+  button.danger-outline {
+    background: transparent; color: var(--fp-danger); border: 1px solid var(--fp-danger);
+  }
   button:disabled { opacity: 0.5; cursor: default; }
+  input, textarea {
+    font: inherit; box-sizing: border-box; width: 100%; padding: 9px 12px; border-radius: 8px;
+    border: 1px solid var(--divider-color); background: var(--card-background-color);
+    color: var(--primary-text-color);
+  }
   .placeholder {
     display: flex; align-items: center; justify-content: center;
     background: var(--secondary-background-color); color: var(--secondary-text-color);
     font-size: 40px;
   }
   .status { font-size: 14px; color: var(--secondary-text-color); margin: 8px 0 0; }
-  .status.error { color: var(--error-color, #db4437); }
+  .status.error { color: var(--fp-danger); }
+  .badge {
+    display: inline-block; font-size: 12px; padding: 2px 8px; border-radius: 999px;
+    background: var(--secondary-background-color); color: var(--secondary-text-color);
+  }
+  .badge.ready { background: var(--success-color, #43a047); color: #fff; }
 `;
 
 class FoodPlanningCard extends HTMLElement {
@@ -121,7 +175,8 @@ class FoodPlanningCard extends HTMLElement {
     super();
     this.attachShadow({ mode: "open" });
     this._recipes = null;
-    this._filter = "";
+    this._search = "";
+    this._filter = "all";
     this._unsub = null;
     this._subscribing = false;
   }
@@ -190,29 +245,29 @@ class FoodPlanningCard extends HTMLElement {
       ha-card { padding: 16px; }
       h1 { margin: 0 0 12px; font-size: 20px; font-weight: 500; }
       .add { display: flex; gap: 8px; align-items: flex-start; }
-      textarea {
-        flex: 1; min-height: 40px; max-height: 200px; resize: vertical; box-sizing: border-box;
-        font: inherit; padding: 9px 12px; border-radius: 8px;
-        border: 1px solid var(--divider-color); background: var(--card-background-color);
-        color: var(--primary-text-color);
+      .add textarea { flex: 1; min-height: 40px; max-height: 200px; resize: vertical; }
+      .tools { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 16px; }
+      .tools input { flex: 1 1 200px; width: auto; }
+      .chips { display: flex; gap: 6px; flex-wrap: wrap; }
+      .chip {
+        padding: 6px 12px; font-size: 13px; background: transparent;
+        color: var(--primary-text-color); border: 1px solid var(--divider-color);
       }
-      input[type=search] {
-        width: 100%; box-sizing: border-box; margin-top: 12px; font: inherit; padding: 8px 12px;
-        border-radius: 8px; border: 1px solid var(--divider-color);
-        background: var(--card-background-color); color: var(--primary-text-color);
-      }
+      .chip.active { background: var(--primary-color); color: var(--text-primary-color, #fff); border-color: transparent; }
       .grid {
         display: grid; gap: 12px; margin-top: 16px;
-        grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+        grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
       }
       .tile {
         all: unset; cursor: pointer; display: flex; flex-direction: column; overflow: hidden;
         border-radius: var(--fp-radius); background: var(--secondary-background-color);
-        box-shadow: var(--ha-card-box-shadow, none); transition: transform 0.15s;
+        box-shadow: var(--ha-card-box-shadow, none); transition: transform 0.15s; position: relative;
       }
       .tile:hover, .tile:focus-visible { transform: translateY(-2px); }
       .tile:focus-visible { outline: 2px solid var(--primary-color); }
       .tile img, .tile .placeholder { width: 100%; aspect-ratio: 4 / 3; object-fit: cover; }
+      .tile .badge { position: absolute; top: 8px; left: 8px; box-shadow: 0 1px 4px rgba(0,0,0,.4); }
+      .tile .badge:not(.ready) { background: rgba(0, 0, 0, 0.65); color: #fff; }
       .tile .name { padding: 8px 10px 2px; font-weight: 500; line-height: 1.25; }
       .tile .meta { padding: 0 10px 10px; font-size: 12px; color: var(--secondary-text-color); }
       .empty { margin: 16px 0 0; color: var(--secondary-text-color); }
@@ -230,13 +285,24 @@ class FoodPlanningCard extends HTMLElement {
     this._addButton.addEventListener("click", () => this._add());
     this._status = el("p", { cls: "status", attrs: { hidden: "" } });
 
-    this._search = el("input", {
-      attrs: { type: "search", placeholder: t.search, hidden: "" },
-    });
-    this._search.addEventListener("input", () => {
-      this._filter = this._search.value.trim().toLowerCase();
+    this._searchInput = el("input", { attrs: { type: "search", placeholder: t.search } });
+    this._searchInput.addEventListener("input", () => {
+      this._search = this._searchInput.value.trim().toLowerCase();
       this._renderGrid();
     });
+    this._chips = el("div", { cls: "chips" });
+    for (const [key, label] of [
+      ["all", t.filterAll],
+      ["ready", t.filterReady],
+      ["shopping", t.filterShopping],
+    ]) {
+      const chip = el("button", { cls: "chip", text: label, attrs: { "data-filter": key } });
+      chip.addEventListener("click", () => {
+        this._filter = key;
+        this._renderGrid();
+      });
+      this._chips.append(chip);
+    }
     this._grid = el("div", { cls: "grid" });
     this._empty = el("p", { cls: "empty", attrs: { hidden: "" } });
 
@@ -246,7 +312,7 @@ class FoodPlanningCard extends HTMLElement {
       el("h1", { text: this._config.title || t.title }),
       el("div", { cls: "add" }, this._input, this._addButton),
       this._status,
-      this._search,
+      el("div", { cls: "tools" }, this._searchInput, this._chips),
       this._grid,
       this._empty
     );
@@ -289,26 +355,35 @@ class FoodPlanningCard extends HTMLElement {
     if (!this._grid) return;
     const t = this._t;
     const recipes = this._recipes || [];
-    this._search.toggleAttribute("hidden", recipes.length < SEARCH_FROM);
-    const shown = this._filter
-      ? recipes.filter(
-          (r) =>
-            r.title.toLowerCase().includes(this._filter) ||
-            r.ingredients.some((i) => i.toLowerCase().includes(this._filter))
-        )
-      : recipes;
+    for (const chip of this._chips.children) {
+      chip.classList.toggle("active", chip.dataset.filter === this._filter);
+    }
+    const shown = recipes.filter((r) => {
+      if (this._filter !== "all" && r.status !== this._filter) return false;
+      if (!this._search) return true;
+      return (
+        r.title.toLowerCase().includes(this._search) ||
+        r.ingredients.some((i) => i.toLowerCase().includes(this._search))
+      );
+    });
 
     this._grid.replaceChildren(...shown.map((recipe) => this._tile(recipe)));
-    const emptyText =
-      this._recipes === null ? "" : recipes.length === 0 ? t.empty : shown.length === 0 ? t.noMatch : "";
+    let emptyText = "";
+    if (this._recipes !== null) {
+      if (recipes.length === 0) emptyText = t.empty;
+      else if (shown.length === 0) emptyText = t.noMatch;
+    }
     this._empty.textContent = emptyText;
     this._empty.toggleAttribute("hidden", !emptyText);
   }
 
   _tile(recipe) {
+    const t = this._t;
     const tile = el("button", { cls: "tile", attrs: { type: "button" } });
+    tile.append(recipeImage(recipe));
+    if (recipe.status === "ready") tile.append(el("span", { cls: "badge ready", text: t.ready }));
+    if (recipe.status === "shopping") tile.append(el("span", { cls: "badge", text: t.toBuy(recipe.to_buy) }));
     tile.append(
-      recipeImage(recipe),
       el("span", { cls: "name", text: recipe.title }),
       el("span", { cls: "meta", text: recipe.servings || "" })
     );
@@ -350,8 +425,10 @@ class FoodPlanningRecipeDialog extends HTMLElement {
   constructor() {
     super();
     this.attachShadow({ mode: "open" });
+    this._editing = false;
+    this._confirmingDelete = false;
     this._onKey = (ev) => {
-      if (ev.key === "Escape") this.close();
+      if (ev.key === "Escape" && !this._editing) this.close();
     };
   }
 
@@ -365,7 +442,6 @@ class FoodPlanningRecipeDialog extends HTMLElement {
 
   connectedCallback() {
     document.addEventListener("keydown", this._onKey);
-    this._closeButton?.focus();
   }
 
   disconnectedCallback() {
@@ -383,22 +459,24 @@ class FoodPlanningRecipeDialog extends HTMLElement {
       this.close();
       return;
     }
-    // Keep a status message across re-renders triggered by data updates.
+    this._recipe = recipe;
+    // Don't throw away what the user is typing when data changes elsewhere.
+    if (this._editing) return;
     const status = this._statusText;
-    this._render(recipe);
+    this._render();
     if (status) this._setStatus(status.text, status.isError);
   }
 
   _setStatus(text, isError = false) {
     this._statusText = text ? { text, isError } : null;
+    if (!this._status) return;
     this._status.textContent = text || "";
     this._status.classList.toggle("error", isError);
     this._status.toggleAttribute("hidden", !text);
   }
 
-  _render(recipe) {
-    const t = this._t;
-    const style = el("style", {
+  _style() {
+    return el("style", {
       text:
         SHARED_CSS +
         `
@@ -414,14 +492,23 @@ class FoodPlanningRecipeDialog extends HTMLElement {
         font-family: var(--paper-font-body1_-_font-family, inherit);
       }
       .hero { width: 100%; max-height: 360px; aspect-ratio: 16 / 9; object-fit: cover; display: block; }
-      .close {
-        position: absolute; top: 12px; right: 12px; width: 40px; height: 40px; padding: 0;
-        border-radius: 50%; background: rgba(0, 0, 0, 0.55); color: #fff; font-size: 20px;
+      .corner { position: absolute; top: 12px; right: 12px; display: flex; gap: 8px; }
+      .corner button {
+        width: 40px; height: 40px; padding: 0; border-radius: 50%;
+        background: rgba(0, 0, 0, 0.55); color: #fff; font-size: 18px; line-height: 40px;
       }
       .content { padding: 20px 24px 24px; }
-      h2 { margin: 0; font-size: 26px; line-height: 1.2; font-weight: 600; }
+      h2 { margin: 0; font-size: 26px; line-height: 1.2; font-weight: 600; padding-right: 96px; }
+      .hero + .corner + .content h2 { padding-right: 0; }
       .meta { margin: 6px 0 0; color: var(--secondary-text-color); font-size: 14px; }
       .meta a { color: var(--primary-color); }
+      .state {
+        display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+        margin-top: 14px; padding: 10px 14px; border-radius: 8px;
+        background: var(--secondary-background-color);
+      }
+      .state.ready { background: rgba(67, 160, 71, 0.15); }
+      .state span { flex: 1; }
       .columns {
         display: grid; gap: 24px; margin-top: 20px;
         grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
@@ -451,14 +538,58 @@ class FoodPlanningRecipeDialog extends HTMLElement {
         margin-top: 8px; padding: 12px 14px; border-radius: 8px; line-height: 1.5;
         background: var(--secondary-background-color); white-space: pre-line;
       }
-      .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 24px; }
+      .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 24px; align-items: center; }
       .actions .spacer { flex: 1; }
+      form label { display: block; margin-top: 14px; font-size: 13px; color: var(--secondary-text-color); }
+      form label > input, form label > textarea { margin-top: 4px; }
+      form textarea { resize: vertical; line-height: 1.45; }
+      .row { display: grid; grid-template-columns: 2fr 1fr; gap: 12px; }
+      @media (max-width: 640px) { .row { grid-template-columns: 1fr; } }
     `,
     });
+  }
 
-    const hero = recipeImage(recipe, "hero");
-    this._closeButton = el("button", { cls: "close", text: "✕", attrs: { "aria-label": t.close } });
-    this._closeButton.addEventListener("click", () => this.close());
+  _render() {
+    if (this._editing) this._renderEdit();
+    else this._renderView();
+  }
+
+  _shell(...content) {
+    const t = this._t;
+    const corner = el("div", { cls: "corner" });
+    if (!this._editing) {
+      const editButton = el("button", { text: "✎", attrs: { "aria-label": t.edit, title: t.edit } });
+      editButton.addEventListener("click", () => {
+        this._editing = true;
+        this._confirmingDelete = false;
+        this._setStatus("");
+        this._render();
+      });
+      corner.append(editButton);
+    }
+    const closeButton = el("button", { text: "✕", attrs: { "aria-label": t.close, title: t.close } });
+    closeButton.addEventListener("click", () => this.close());
+    corner.append(closeButton);
+
+    const recipe = this._recipe;
+    const hasImage = Boolean(safeUrl(recipe.image_url));
+    const panel = el(
+      "div",
+      { cls: "panel", attrs: { role: "dialog", "aria-modal": "true", "aria-label": recipe.title } },
+      hasImage ? recipeImage(recipe, "hero") : null,
+      corner,
+      el("div", { cls: "content" }, ...content)
+    );
+    const backdrop = el("div", { cls: "backdrop" }, panel);
+    backdrop.addEventListener("click", (ev) => {
+      if (ev.target === backdrop && !this._editing) this.close();
+    });
+    this.shadowRoot.replaceChildren(this._style(), backdrop);
+  }
+
+  _renderView() {
+    const t = this._t;
+    const recipe = this._recipe;
 
     const meta = el("p", { cls: "meta" });
     const metaParts = [];
@@ -477,6 +608,15 @@ class FoodPlanningRecipeDialog extends HTMLElement {
       meta.append(part);
     });
 
+    let state = null;
+    if (recipe.status === "ready") {
+      const cookedButton = el("button", { text: `✓ ${t.cooked}` });
+      cookedButton.addEventListener("click", () => this._markCooked(cookedButton));
+      state = el("div", { cls: "state ready" }, el("span", { text: t.readyLong }), cookedButton);
+    } else if (recipe.status === "shopping") {
+      state = el("div", { cls: "state" }, el("span", { text: t.toBuy(recipe.to_buy) }));
+    }
+
     const ingredients = el("ul", { cls: "ingredients" });
     for (const text of recipe.ingredients) {
       const li = el("li", { text });
@@ -484,39 +624,121 @@ class FoodPlanningRecipeDialog extends HTMLElement {
       li.addEventListener("click", () => li.classList.toggle("done"));
       ingredients.append(li);
     }
-    const steps = el("ol", { cls: "steps" }, ...recipe.steps.map((s) => el("li", { text: s })));
-
     const left = el("section", {}, el("h3", { text: t.ingredients }), ingredients);
     const right = el("section", {});
-    if (recipe.steps.length) right.append(el("h3", { text: t.steps }), steps);
-    if (recipe.notes) right.append(el("h3", { text: t.notes }), el("div", { cls: "notes", text: recipe.notes }));
+    if (recipe.steps.length) {
+      right.append(
+        el("h3", { text: t.steps }),
+        el("ol", { cls: "steps" }, ...recipe.steps.map((s) => el("li", { text: s })))
+      );
+    }
+    if (recipe.notes) {
+      right.append(el("h3", { text: t.notes }), el("div", { cls: "notes", text: recipe.notes }));
+    }
 
     const addButton = el("button", { text: `🛒 ${t.addToList}` });
     addButton.addEventListener("click", () => this._addToList(addButton));
-    const removeButton = el("button", { cls: "secondary", text: t.remove });
-    removeButton.addEventListener("click", () => this._remove(recipe));
+    const actions = el("div", { cls: "actions" }, addButton, el("span", { cls: "spacer" }));
+    if (this._confirmingDelete) {
+      const cancel = el("button", { cls: "secondary", text: t.cancel });
+      cancel.addEventListener("click", () => {
+        this._confirmingDelete = false;
+        this._render();
+      });
+      const confirm = el("button", { cls: "danger", text: t.confirmRemove });
+      confirm.addEventListener("click", () => this._remove(confirm));
+      actions.append(cancel, confirm);
+    } else {
+      const remove = el("button", { cls: "danger-outline", text: t.remove });
+      remove.addEventListener("click", () => {
+        this._confirmingDelete = true;
+        this._render();
+      });
+      actions.append(remove);
+    }
     this._status = el("p", { cls: "status", attrs: { hidden: "" } });
 
-    const panel = el(
-      "div",
-      { cls: "panel", attrs: { role: "dialog", "aria-modal": "true", "aria-label": recipe.title } },
-      hero,
-      this._closeButton,
-      el(
-        "div",
-        { cls: "content" },
-        el("h2", { text: recipe.title }),
-        meta,
-        el("div", { cls: "columns" }, left, right),
-        el("div", { cls: "actions" }, addButton, el("span", { cls: "spacer" }), removeButton),
-        this._status
-      )
+    this._shell(
+      el("h2", { text: recipe.title }),
+      meta,
+      state,
+      el("div", { cls: "columns" }, left, right),
+      actions,
+      this._status
     );
-    const backdrop = el("div", { cls: "backdrop" }, panel);
-    backdrop.addEventListener("click", (ev) => {
-      if (ev.target === backdrop) this.close();
+  }
+
+  _renderEdit() {
+    const t = this._t;
+    const recipe = this._recipe;
+    const field = (label, control) => el("label", { text: label }, control);
+    const input = (value) => {
+      const node = el("input", { attrs: { type: "text" } });
+      node.value = value || "";
+      return node;
+    };
+    const area = (value, rows) => {
+      const node = el("textarea", { attrs: { rows: String(rows) } });
+      node.value = value || "";
+      return node;
+    };
+
+    const title = input(recipe.title);
+    const servings = input(recipe.servings);
+    const ingredients = area(recipe.ingredients.join("\n"), Math.min(14, recipe.ingredients.length + 2));
+    const steps = area(recipe.steps.join("\n"), Math.min(14, recipe.steps.length + 3));
+    const notes = area(recipe.notes, 3);
+    const source = input(recipe.source_url);
+
+    const save = el("button", { text: t.save, attrs: { type: "submit" } });
+    const cancel = el("button", { cls: "secondary", text: t.cancel, attrs: { type: "button" } });
+    cancel.addEventListener("click", () => {
+      this._editing = false;
+      this._setStatus("");
+      this._render();
     });
-    this.shadowRoot.replaceChildren(style, backdrop);
+    this._status = el("p", { cls: "status", attrs: { hidden: "" } });
+
+    const form = el(
+      "form",
+      {},
+      el("div", { cls: "row" }, field(t.fieldTitle, title), field(t.fieldServings, servings)),
+      field(t.fieldIngredients, ingredients),
+      field(t.fieldSteps, steps),
+      field(t.fieldNotes, notes),
+      field(t.fieldSource, source),
+      el("div", { cls: "actions" }, save, cancel),
+      this._status
+    );
+    form.addEventListener("submit", async (ev) => {
+      ev.preventDefault();
+      if (!title.value.trim()) {
+        this._setStatus(t.titleRequired, true);
+        return;
+      }
+      save.disabled = true;
+      try {
+        await this._hass.callWS({
+          type: `${DOMAIN}/recipes/update`,
+          uid: this._uid,
+          title: title.value.trim(),
+          servings: servings.value.trim() || null,
+          ingredients: lines(ingredients.value),
+          steps: lines(steps.value),
+          notes: notes.value.trim() || null,
+          source_url: source.value.trim() || null,
+        });
+        this._editing = false;
+        this._setStatus("");
+        this._render();
+      } catch (err) {
+        this._setStatus(errorMessage(err), true);
+        save.disabled = false;
+      }
+    });
+
+    this._shell(el("h2", { text: t.edit }), form);
+    title.focus();
   }
 
   async _addToList(button) {
@@ -537,13 +759,24 @@ class FoodPlanningRecipeDialog extends HTMLElement {
     }
   }
 
-  async _remove(recipe) {
-    if (!window.confirm(this._t.confirmRemove(recipe.title))) return;
+  async _markCooked(button) {
+    button.disabled = true;
     try {
-      await this._hass.callWS({ type: `${DOMAIN}/recipes/delete`, uid: recipe.uid });
+      await this._hass.callWS({ type: `${DOMAIN}/recipes/cooked`, uid: this._uid });
+    } catch (err) {
+      this._setStatus(errorMessage(err), true);
+      button.disabled = false;
+    }
+  }
+
+  async _remove(button) {
+    button.disabled = true;
+    try {
+      await this._hass.callWS({ type: `${DOMAIN}/recipes/delete`, uid: this._uid });
       this.close();
     } catch (err) {
       this._setStatus(errorMessage(err), true);
+      button.disabled = false;
     }
   }
 }
