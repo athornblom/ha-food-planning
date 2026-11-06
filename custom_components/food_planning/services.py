@@ -17,6 +17,7 @@ from homeassistant.helpers import config_validation as cv
 
 from .const import (
     ATTR_ADD_TO_SHOPPING_LIST,
+    ATTR_INGREDIENTS,
     ATTR_ONLY_MISSING,
     ATTR_RECIPE,
     ATTR_TEXT,
@@ -47,6 +48,7 @@ ADD_SCHEMA = vol.Schema(
     {
         vol.Required(ATTR_RECIPE): cv.string,
         vol.Optional(ATTR_ONLY_MISSING, default=False): cv.boolean,
+        vol.Optional(ATTR_INGREDIENTS): vol.All(cv.ensure_list, [cv.string]),
     }
 )
 
@@ -97,7 +99,10 @@ def async_setup_services(hass: HomeAssistant) -> None:
                 translation_placeholders={"recipe": call.data[ATTR_RECIPE]},
             )
         added = async_add_recipe_to_shopping(
-            entry, recipe, only_missing=call.data[ATTR_ONLY_MISSING]
+            entry,
+            recipe,
+            only_missing=call.data[ATTR_ONLY_MISSING],
+            ingredients=call.data.get(ATTR_INGREDIENTS),
         )
         await store.async_save()
         return {"added": added} if call.return_response else None

@@ -75,7 +75,11 @@ async def async_import_recipe(
 
 
 def async_add_recipe_to_shopping(
-    entry: FoodPlanningConfigEntry, recipe: Recipe, *, only_missing: bool = False
+    entry: FoodPlanningConfigEntry,
+    recipe: Recipe,
+    *,
+    only_missing: bool = False,
+    ingredients: list[str] | None = None,
 ) -> int:
     """Add a recipe's ingredients (or only those missing at home).
 
@@ -83,7 +87,9 @@ def async_add_recipe_to_shopping(
     number of items added.
     """
     data = entry.runtime_data
-    added = data.store.add_recipe_to_shopping(recipe, only_missing=only_missing)
+    added = data.store.add_recipe_to_shopping(
+        recipe, only_missing=only_missing, ingredients=ingredients
+    )
     data.mergers[SHOPPING].async_schedule(item.uid for item in added)
     return len(added)
 

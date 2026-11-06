@@ -155,14 +155,21 @@ class FoodPlanningStore:
         after duplicates from several recipes were merged into them.
         """
         by_title = {r.title: r for r in self.recipes}
-        for item in self.shopping + self.pantry:
+        # 0.5–0.8 moved items home with their recipe names; At home is now
+        # just what's in the house.
+        for item in self.pantry:
+            item.recipe_uids = []
+            names = [
+                n.strip() for n in (item.description or "").split(RECIPE_SEPARATOR)
+            ]
+            if item.description and all(n in by_title for n in names):
+                item.description = None
+        for item in self.shopping:
             for name in (item.description or "").split(RECIPE_SEPARATOR):
                 recipe = by_title.get(name.strip())
                 if recipe and recipe.uid not in item.recipe_uids:
                     item.recipe_uids.append(recipe.uid)
-        linked = {
-            uid for item in self.shopping + self.pantry for uid in item.recipe_uids
-        }
+        linked = {uid for item in self.shopping for uid in item.recipe_uids}
         for recipe in self.recipes:
             if recipe.uid in linked:
                 recipe.on_shopping_list = True
@@ -318,7 +325,11 @@ class FoodPlanningStore:
         return True
 
     def add_recipe_to_shopping(
-        self, recipe: Recipe, *, only_missing: bool = False
+        self,
+        recipe: Recipe,
+        *,
+        only_missing: bool = False,
+        ingredients: list[str] | None = None,
     ) -> list[ShoppingItem]:
         """Add a recipe's ingredients, skipping exact copies of open items.
 
@@ -330,13 +341,18 @@ class FoodPlanningStore:
         open_items: dict[str, ShoppingItem] = {
             s.summary.casefold(): s for s in self.open_items(SHOPPING)
         }
-        ingredients = recipe.ingredients
-        if only_missing and recipe.missing is not None:
+        if ingredients is not None:
+            # A chosen subset; only the recipe's own ingredients count.
+            own = set(recipe.ingredients)
+            ingredients = [i for i in ingredients if i in own]
+        elif only_missing and recipe.missing is not None:
             ingredients = [
                 recipe.ingredients[i]
                 for i in recipe.missing
                 if i < len(recipe.ingredients)
             ]
+        else:
+            ingredients = recipe.ingredients
         for ingredient in ingredients:
             if existing := open_items.get(ingredient.casefold()):
                 if recipe.uid not in existing.recipe_uids:
@@ -368,11 +384,14 @@ class FoodPlanningStore:
     def move_bought_to_pantry(self) -> list[ShoppingItem]:
         """Move ticked-off shopping items to the pantry. Returns the moved items.
 
-        The items keep their recipe links, so recipes stay "ready to cook".
+        At home is just what's in the house, so the items drop the recipe
+        names and links they had on the shopping list.
         """
         bought = [i for i in self.shopping if i.status == STATUS_COMPLETED]
         self.delete_items(SHOPPING, {i.uid for i in bought})
         for item in bought:
             item.status = STATUS_NEEDS_ACTION
+            item.description = None
+            item.recipe_uids = []
         self.pantry.extend(bought)
         return bought

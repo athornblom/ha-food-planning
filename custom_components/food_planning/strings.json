@@ -81,6 +81,10 @@
         "only_missing": {
           "name": "Only missing",
           "description": "Only add the ingredients that aren't at home."
+        },
+        "ingredients": {
+          "name": "Ingredients",
+          "description": "Only add these of the recipe's ingredients (exact text)."
         }
       }
     },

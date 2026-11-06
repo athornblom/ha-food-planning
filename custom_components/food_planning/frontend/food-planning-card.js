@@ -32,7 +32,8 @@ const STRINGS = {
     readyLong: "Allt finns hemma. Dags att laga!",
     missingLong: (items) => `Saknas hemma: ${items.join(", ")}`,
     onList: (n) => `🛒 ${n} ${n === 1 ? "vara" : "varor"} på inköpslistan`,
-    addMissing: (n) => `Lägg saknade i inköpslistan (${n})`,
+    addSelected: (n) => (n ? `Lägg valda i inköpslistan (${n})` : "Välj ingredienser att handla"),
+    selectHint: "Bocka i det du vill handla. Det som saknas hemma är förvalt.",
     cooked: "Lagad",
     cookedDone: "Markerad som lagad. Hemma uppdateras med det som gick åt.",
     ingredients: "Ingredienser",
@@ -80,7 +81,8 @@ const STRINGS = {
     readyLong: "Everything is at home. Time to cook!",
     missingLong: (items) => `Not at home: ${items.join(", ")}`,
     onList: (n) => `🛒 ${n} ${n === 1 ? "item" : "items"} on the shopping list`,
-    addMissing: (n) => `Add missing to shopping list (${n})`,
+    addSelected: (n) => (n ? `Add selected to shopping list (${n})` : "Pick ingredients to buy"),
+    selectHint: "Tick what you want to buy. What's missing at home is preselected.",
     cooked: "Cooked",
     cookedDone: "Marked as cooked. At home is being updated with what was used.",
     ingredients: "Ingredients",
@@ -574,14 +576,10 @@ class FoodPlanningRecipeDialog extends HTMLElement {
         color: var(--secondary-text-color); font-weight: 600;
       }
       ul.ingredients { list-style: none; margin: 0; padding: 0; }
-      ul.ingredients li {
-        padding: 7px 0; border-bottom: 1px solid var(--divider-color); cursor: pointer;
-        line-height: 1.35;
-      }
-      ul.ingredients li.done { text-decoration: line-through; color: var(--secondary-text-color); }
-      ul.ingredients li.missing::after {
-        content: attr(data-note); color: var(--warning-color, #ffa600); font-size: 12px;
-      }
+      ul.ingredients li { padding: 6px 0; border-bottom: 1px solid var(--divider-color); line-height: 1.35; }
+      ul.ingredients label { display: flex; align-items: baseline; gap: 10px; cursor: pointer; }
+      ul.ingredients input { width: 18px; height: 18px; flex: none; margin: 0; position: relative; top: 3px; accent-color: var(--primary-color); }
+      ul.ingredients .note { margin-left: auto; padding-left: 8px; white-space: nowrap; color: var(--warning-color, #ffa600); font-size: 12px; }
       ol.steps { margin: 0; padding: 0; list-style: none; counter-reset: step; }
       ol.steps li {
         counter-increment: step; position: relative; padding: 0 0 14px 40px; line-height: 1.5;
@@ -688,15 +686,41 @@ class FoodPlanningRecipeDialog extends HTMLElement {
     }
     const missingSet = new Set(recipe.missing || []);
 
-    const ingredients = el("ul", { cls: "ingredients" });
-    for (const text of recipe.ingredients) {
-      const li = el("li", { cls: missingSet.has(text) ? "missing" : "", text });
-      if (missingSet.has(text)) li.dataset.note = ` · ${t.notAtHome}`;
-      // Tick off ingredients while cooking; only kept until the view closes.
-      li.addEventListener("click", () => li.classList.toggle("done"));
-      ingredients.append(li);
+    // Ingredients to put on the shopping list. Starts as what's missing at
+    // home and follows new checks until the user changes the selection.
+    const missingKey = JSON.stringify(recipe.missing || []);
+    if (!this._selectionTouched && this._selectionKey !== missingKey) {
+      this._selected = new Set(recipe.missing || []);
+      this._selectionKey = missingKey;
     }
-    const left = el("section", {}, el("h3", { text: t.ingredients }), ingredients);
+    const ingredients = el("ul", { cls: "ingredients" });
+    const addButton = el("button");
+    const updateAddButton = () => {
+      const n = recipe.ingredients.filter((i) => this._selected.has(i)).length;
+      addButton.textContent = `🛒 ${t.addSelected(n)}`;
+      addButton.disabled = n === 0;
+    };
+    for (const text of recipe.ingredients) {
+      const box = el("input", { attrs: { type: "checkbox" } });
+      box.checked = this._selected.has(text);
+      const label = el("label", {}, box, el("span", { text }));
+      if (missingSet.has(text)) label.append(el("span", { cls: "note", text: t.notAtHome }));
+      box.addEventListener("change", () => {
+        this._selectionTouched = true;
+        if (box.checked) this._selected.add(text);
+        else this._selected.delete(text);
+        updateAddButton();
+      });
+      ingredients.append(el("li", { cls: missingSet.has(text) ? "missing" : "" }, label));
+    }
+    updateAddButton();
+    const left = el(
+      "section",
+      {},
+      el("h3", { text: t.ingredients }),
+      el("p", { cls: "hint", text: t.selectHint }),
+      ingredients
+    );
     const right = el("section", {});
     if (recipe.steps.length) {
       right.append(
@@ -708,11 +732,9 @@ class FoodPlanningRecipeDialog extends HTMLElement {
       right.append(el("h3", { text: t.notes }), el("div", { cls: "notes", text: recipe.notes }));
     }
 
-    const onlyMissing = recipe.status === "missing";
-    const addButton = el("button", {
-      text: `🛒 ${onlyMissing ? t.addMissing(recipe.missing.length) : t.addToList}`,
-    });
-    addButton.addEventListener("click", () => this._addToList(addButton, onlyMissing));
+    addButton.addEventListener("click", () =>
+      this._addToList(addButton, recipe.ingredients.filter((i) => this._selected.has(i)))
+    );
     const cookedButton = el("button", { cls: "secondary", text: `✓ ${t.cooked}` });
     cookedButton.addEventListener("click", () => this._markCooked(cookedButton));
     const actions = el(
@@ -850,21 +872,21 @@ class FoodPlanningRecipeDialog extends HTMLElement {
     title.focus();
   }
 
-  async _addToList(button, onlyMissing = false) {
+  async _addToList(button, ingredients) {
     button.disabled = true;
     try {
       const result = await this._hass.callWS({
         type: "call_service",
         domain: DOMAIN,
         service: "add_recipe_to_shopping_list",
-        service_data: { recipe: this._uid, only_missing: onlyMissing },
+        service_data: { recipe: this._uid, ingredients },
         return_response: true,
       });
       this._setStatus(this._t.added(result?.response?.added ?? 0));
     } catch (err) {
       this._setStatus(errorMessage(err), true);
     } finally {
-      button.disabled = false;
+      button.disabled = !ingredients.length;
     }
   }
 
@@ -1306,6 +1328,238 @@ if (!customElements.get("food-planning-nav")) {
   );
 }
 
+/* ------------------------------------------------------------------ */
+/* "What can we cook?" box for the At home view                        */
+/* ------------------------------------------------------------------ */
+
+const COOK_STRINGS = {
+  sv: {
+    title: "🍳 Det här kan ni laga",
+    ready: "Allt finns hemma",
+    almost: "Nästan – saknar lite",
+    missing: (items) => `saknar ${items.join(", ")}`,
+    shop: "+ Handla",
+    added: (title, n) => `${n} ${n === 1 ? "vara" : "varor"} till ”${title}” lades på inköpslistan.`,
+    none: "Inget recept kan lagas med det som finns hemma just nu.",
+    checking: "Kollar recepten mot det som finns hemma…",
+    noRecipes: "Lägg till recept under Recept så visas här vad ni kan laga.",
+  },
+  en: {
+    title: "🍳 What you can cook",
+    ready: "Everything is at home",
+    almost: "Almost – missing a little",
+    missing: (items) => `missing ${items.join(", ")}`,
+    shop: "+ Shop",
+    added: (title, n) => `${n} ${n === 1 ? "item" : "items"} for “${title}” added to the shopping list.`,
+    none: "Nothing can be cooked with what's at home right now.",
+    checking: "Checking the recipes against what's at home…",
+    noRecipes: "Add recipes under Recipes to see what you can cook here.",
+  },
+};
+
+/**
+ * Which recipes can be cooked with what's at home, and which are close.
+ *
+ *   type: custom:food-planning-cook-card
+ *   almost: 2   # show recipes missing at most this many ingredients
+ */
+class FoodPlanningCookCard extends HTMLElement {
+  constructor() {
+    super();
+    this.attachShadow({ mode: "open" });
+    this._recipes = null;
+    this._categories = [];
+    this._unsub = null;
+    this._subscribing = false;
+  }
+
+  setConfig(config) {
+    this._config = config || {};
+    this._t = COOK_STRINGS[this._config.language] || COOK_STRINGS.sv;
+    this._recipeStrings = STRINGS[this._config.language] || STRINGS.sv;
+    this._render();
+  }
+
+  set hass(hass) {
+    this._hass = hass;
+    if (!this._unsub && !this._subscribing && this.isConnected) this._subscribe();
+  }
+
+  connectedCallback() {
+    if (this._hass && !this._unsub && !this._subscribing) this._subscribe();
+  }
+
+  disconnectedCallback() {
+    if (this._unsub) {
+      this._unsub();
+      this._unsub = null;
+    }
+  }
+
+  getCardSize() {
+    return 3;
+  }
+
+  getGridOptions() {
+    return { columns: "full" };
+  }
+
+  async _subscribe() {
+    this._subscribing = true;
+    try {
+      this._unsub = await this._hass.connection.subscribeMessage(
+        (msg) => {
+          this._recipes = msg.recipes;
+          this._categories = msg.categories || [];
+          this._render();
+          if (this._dialog) this._dialog.update(this._recipes, this._categories);
+        },
+        { type: `${DOMAIN}/recipes/subscribe` }
+      );
+      if (!this.isConnected) this.disconnectedCallback();
+    } catch (_err) {
+      /* the recipe card shows the error; keep this box quiet */
+    } finally {
+      this._subscribing = false;
+    }
+  }
+
+  _render() {
+    if (!this._config) return;
+    const t = this._t;
+    const limit = Number(this._config.almost ?? 2);
+    const recipes = this._recipes || [];
+    const ready = recipes.filter((r) => r.status === "ready");
+    const almost = recipes
+      .filter((r) => r.status === "missing" && r.missing.length <= limit)
+      .sort((a, b) => a.missing.length - b.missing.length);
+    const unchecked = recipes.some((r) => r.status === null && r.ingredients.length);
+
+    const style = el("style", {
+      text:
+        SHARED_CSS +
+        `
+      ha-card { padding: 16px; }
+      h1 { margin: 0 0 4px; font-size: 18px; font-weight: 500; }
+      h2 {
+        margin: 14px 0 6px; font-size: 13px; letter-spacing: 0.08em; text-transform: uppercase;
+        color: var(--secondary-text-color); font-weight: 600;
+      }
+      .ready { display: flex; flex-wrap: wrap; gap: 8px; }
+      .pill {
+        all: unset; cursor: pointer; display: flex; align-items: center; gap: 8px;
+        padding: 4px 12px 4px 4px; border-radius: 999px; background: var(--secondary-background-color);
+      }
+      .pill img, .pill .placeholder { width: 32px; height: 32px; border-radius: 50%; object-fit: cover; font-size: 16px; }
+      .pill:focus-visible { outline: 2px solid var(--primary-color); }
+      ul { list-style: none; margin: 0; padding: 0; }
+      li { display: flex; align-items: center; gap: 10px; padding: 6px 0; border-bottom: 1px solid var(--divider-color); }
+      li .what { flex: 1; min-width: 0; cursor: pointer; }
+      li .name { font-weight: 500; }
+      li .miss { font-size: 13px; color: var(--secondary-text-color); }
+      li button { padding: 6px 12px; font-size: 13px; flex: none; }
+      .muted { color: var(--secondary-text-color); margin: 8px 0 0; }
+    `,
+    });
+
+    const content = [el("h1", { text: t.title })];
+    if (this._recipes === null) {
+      // waiting for data
+    } else if (!recipes.length) {
+      content.push(el("p", { cls: "muted", text: t.noRecipes }));
+    } else {
+      if (ready.length) {
+        content.push(el("h2", { text: t.ready }));
+        const row = el("div", { cls: "ready" });
+        for (const recipe of ready) {
+          const pill = el("button", { cls: "pill" }, recipeImage(recipe), el("span", { text: recipe.title }));
+          pill.addEventListener("click", () => this._open(recipe.uid));
+          row.append(pill);
+        }
+        content.push(row);
+      }
+      if (almost.length) {
+        content.push(el("h2", { text: t.almost }));
+        const list = el("ul");
+        for (const recipe of almost) {
+          const what = el(
+            "div",
+            { cls: "what" },
+            el("div", { cls: "name", text: recipe.title }),
+            el("div", { cls: "miss", text: t.missing(recipe.missing) })
+          );
+          what.addEventListener("click", () => this._open(recipe.uid));
+          const shop = el("button", { cls: "secondary", text: t.shop });
+          shop.addEventListener("click", () => this._shop(recipe, shop));
+          list.append(el("li", {}, what, shop));
+        }
+        content.push(list);
+      }
+      if (!ready.length && !almost.length) {
+        content.push(el("p", { cls: "muted", text: unchecked ? t.checking : t.none }));
+      } else if (unchecked) {
+        content.push(el("p", { cls: "muted", text: t.checking }));
+      }
+    }
+    this._status = el("p", { cls: "status", attrs: { hidden: "" } });
+    content.push(this._status);
+    this.shadowRoot.replaceChildren(style, el("ha-card", {}, ...content));
+    if (this._statusText) this._setStatus(this._statusText.text, this._statusText.isError);
+  }
+
+  _setStatus(text, isError = false) {
+    this._statusText = text ? { text, isError } : null;
+    if (!this._status) return;
+    this._status.textContent = text || "";
+    this._status.classList.toggle("error", isError);
+    this._status.toggleAttribute("hidden", !text);
+  }
+
+  async _shop(recipe, button) {
+    button.disabled = true;
+    try {
+      const result = await this._hass.callWS({
+        type: "call_service",
+        domain: DOMAIN,
+        service: "add_recipe_to_shopping_list",
+        service_data: { recipe: recipe.uid, ingredients: recipe.missing },
+        return_response: true,
+      });
+      this._setStatus(this._t.added(recipe.title, result?.response?.added ?? 0));
+    } catch (err) {
+      this._setStatus(errorMessage(err), true);
+      button.disabled = false;
+    }
+  }
+
+  _open(uid) {
+    if (this._dialog) this._dialog.close();
+    const dialog = document.createElement("food-planning-recipe-dialog");
+    dialog.setup({
+      hass: this._hass,
+      t: this._recipeStrings,
+      uid,
+      recipes: this._recipes || [],
+      categories: this._categories,
+      onClose: () => {
+        if (this._dialog === dialog) this._dialog = null;
+      },
+    });
+    this._dialog = dialog;
+    document.body.append(dialog);
+  }
+}
+
+if (!customElements.get("food-planning-cook-card")) {
+  customElements.define("food-planning-cook-card", FoodPlanningCookCard);
+  window.customCards = window.customCards || [];
+  window.customCards.push({
+    type: "food-planning-cook-card",
+    name: "Food Planning: what can we cook",
+    description: "Recipes you can cook with what's at home, and those that are close.",
+  });
+}
+
 /*
  * Dashboard strategy: generates the whole Food Planning dashboard, so it
  * ships with (and is updated by) the integration.
@@ -1350,7 +1604,7 @@ class FoodPlanningDashboardStrategy extends HTMLElement {
     const lang = config?.language ? { language: config.language } : {};
     // Subviews: the header shows a back arrow to wherever the dashboard was
     // opened from (or back_path), and the nav card switches between views.
-    const view = (title, path, card) => ({
+    const view = (title, path, cards) => ({
       title,
       path,
       subview: true,
@@ -1361,14 +1615,17 @@ class FoodPlanningDashboardStrategy extends HTMLElement {
         {
           type: "grid",
           column_span: 3,
-          cards: [{ type: "custom:food-planning-nav", active: path, ...lang }, card],
+          cards: [{ type: "custom:food-planning-nav", active: path, ...lang }, ...[].concat(cards)],
         },
       ],
     });
     return {
       views: [
         view(t.shopping, "inkopslista", { type: "custom:food-planning-list-card", list: "shopping", ...lang }),
-        view(t.pantry, "hemma", { type: "custom:food-planning-list-card", list: "pantry", ...lang }),
+        view(t.pantry, "hemma", [
+          { type: "custom:food-planning-list-card", list: "pantry", ...lang },
+          { type: "custom:food-planning-cook-card", ...lang },
+        ]),
         view(t.recipes, "recept", { type: "custom:food-planning-card", title: t.recipes, ...lang }),
       ],
     };

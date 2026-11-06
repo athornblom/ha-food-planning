@@ -28,6 +28,7 @@ ATTR_TEXT: Final = "text"
 ATTR_ADD_TO_SHOPPING_LIST: Final = "add_to_shopping_list"
 ATTR_RECIPE: Final = "recipe"
 ATTR_ONLY_MISSING: Final = "only_missing"
+ATTR_INGREDIENTS: Final = "ingredients"
 
 # The recipe card, served by the integration and loaded on every dashboard.
 FRONTEND_URL: Final = f"/{DOMAIN}/frontend"

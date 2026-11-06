@@ -81,6 +81,10 @@
         "only_missing": {
           "name": "Bara saknade",
           "description": "Lägg bara till ingredienser som inte finns hemma."
+        },
+        "ingredients": {
+          "name": "Ingredienser",
+          "description": "Lägg bara till dessa av receptets ingredienser (exakt text)."
         }
       }
     },

@@ -60,6 +60,9 @@ The dashboard is built from three cards, also usable on their own:
   add, tick off, tap to edit, ✕ to delete. Sections are named for what
   they are ("Att köpa" / "I korgen", "Finns hemma" / "Slut"). The shopping
   list has **Flytta till Hemma** and **Rensa korgen**.
+- `custom:food-planning-cook-card` (on the Hemma view): which recipes can
+  be cooked with what's at home, and which are close (missing at most
+  `almost: 2` ingredients) with a **+ Handla** button for what's missing.
 - `custom:food-planning-nav`: the tabs between the views.
 - `custom:food-planning-card`: the recipes.
 
@@ -88,8 +91,10 @@ type: custom:food-planning-card
   change, the AI checks which ingredients each recipe is missing at home:
   - **✓ Redo att laga:** everything is at home (water, salt and pepper are
     assumed; optional ingredients don't count).
-  - **Saknar N:** the recipe view lists what's missing, and the button
-    becomes **Lägg saknade i inköpslistan**, adding only those.
+  - **Saknar N:** the recipe view marks what's missing.
+- **Pick what to buy:** in the recipe view every ingredient has a checkbox;
+  what's missing at home is preselected. **Lägg valda i inköpslistan**
+  adds exactly the ticked ones.
 - **Lagad** marks a recipe as cooked and has the AI subtract what it used
   from At home.
 - Search by recipe name or ingredient, and filter by status or category.
@@ -110,8 +115,10 @@ off under the integration's **Configure** button.
 
 ### At home (pantry)
 
-`todo.food_planning_pantry` ("Hemma" / "At home") lists the food you have.
-Edit it like any to-do list; ticking an item off means it's used up.
+`todo.food_planning_pantry` ("Hemma" / "At home") lists the food you have,
+plain and simple: items moved here from the shopping list drop the recipe
+names they had there. Edit it like any to-do list; ticking an item off
+means it's used up.
 
 - **Move bought items home:** `food_planning.move_bought_to_pantry` moves
   every ticked-off item from the shopping list to At home (put it on a
@@ -128,7 +135,8 @@ Edit it like any to-do list; ticking an item off means it's used up.
 - `food_planning.import_recipe`: `url` **or** `text`, plus optional
   `add_to_shopping_list`. Can return the recipe as a response.
 - `food_planning.add_recipe_to_shopping_list`: `recipe` (title or ID),
-  optional `only_missing` to add only what isn't at home.
+  optional `ingredients` (a subset, exact text) or `only_missing` (only
+  what isn't at home).
 - `food_planning.move_bought_to_pantry`: move ticked-off shopping items to
   At home.
 
