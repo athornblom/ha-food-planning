@@ -29,7 +29,6 @@ class ImportRecipeButton(FoodPlanningEntity, ButtonEntity):
     def __init__(self, entry: FoodPlanningConfigEntry) -> None:
         """Initialize the button."""
         super().__init__(entry, "button", "import_recipe")
-        self._entry = entry
 
     async def async_press(self) -> None:
         """Import, then clear the text box. Errors show up as a toast."""

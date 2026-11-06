@@ -20,8 +20,8 @@ Anthropic with Claude Haiku 5.5), not in this integration.
    in the caption, can't be imported yet.
 3. **Sites that block automated access** (some large recipe sites do) are
    respected rather than worked around: the import fails with a message
-   saying so. Copy the recipe text and use `food_planning.import_recipe`
-   with `text` instead.
+   saying so. Copy the recipe text and paste it into the recipe list
+   instead (see below).
 4. The AI task returns a structured recipe (title, servings, ingredients,
    steps, notes), written in the configured language and with US units
    converted to metric.
@@ -44,6 +44,16 @@ Names follow Home Assistant's system language.
 - `food_planning.import_recipe`: `url` **or** `text`, plus optional
   `add_to_shopping_list`. Can return the recipe as a response.
 - `food_planning.add_recipe_to_shopping_list`: `recipe` (title or ID).
+
+### Pasting a recipe or a link into the recipe list
+
+- **Text** (for example from a site that blocks automated access): add an
+  item to the recipe list, open it, paste the recipe into the description
+  and save. Unstructured text of 80 characters or more is sent to the AI
+  task and turned into ingredients and steps. Shorter text is kept as a
+  note and never sent.
+- **Link:** add a link as a new item and it's imported like the link box
+  on the dashboard.
 
 ### Adding or editing recipes by hand
 

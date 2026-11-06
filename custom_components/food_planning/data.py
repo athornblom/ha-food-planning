@@ -10,7 +10,12 @@ from homeassistant.core import CALLBACK_TYPE, HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError
 
 from .const import CONF_AI_TASK_ENTITY, CONF_LANGUAGE, DEFAULT_LANGUAGE, DOMAIN
-from .extraction import RecipeSource, async_extract_recipe, async_fetch_source
+from .extraction import (
+    ExtractedRecipe,
+    RecipeSource,
+    async_extract_recipe,
+    async_fetch_source,
+)
 from .store import FoodPlanningStore, Recipe
 
 type FoodPlanningConfigEntry = ConfigEntry[FoodPlanningData]
@@ -44,6 +49,41 @@ class FoodPlanningData:
             listener()
 
 
+async def _async_extract(
+    hass: HomeAssistant, entry: FoodPlanningConfigEntry, source: RecipeSource
+) -> ExtractedRecipe:
+    return await async_extract_recipe(
+        hass,
+        source,
+        language=entry.options.get(CONF_LANGUAGE, DEFAULT_LANGUAGE),
+        ai_task_entity=entry.options.get(CONF_AI_TASK_ENTITY),
+    )
+
+
+async def async_structure_pasted_text(
+    hass: HomeAssistant, entry: FoodPlanningConfigEntry, recipe: Recipe
+) -> bool:
+    """Turn a recipe's pasted free text into ingredients and steps, in place.
+
+    Used when someone pastes a recipe into a to-do item's description.
+    Returns False, leaving the recipe untouched, when the text isn't a
+    recipe (for example a short personal note).
+    """
+    text = f"{recipe.title}\n\n{recipe.notes or ''}".strip()
+    try:
+        extracted = await _async_extract(hass, entry, RecipeSource(text=text))
+    except HomeAssistantError as err:
+        if err.translation_key == "no_recipe_found":
+            return False
+        raise
+    recipe.ingredients = extracted.ingredients
+    recipe.steps = extracted.steps
+    recipe.servings = extracted.servings
+    recipe.notes = extracted.notes
+    recipe.title = recipe.title or extracted.title
+    return True
+
+
 async def async_import_recipe(
     hass: HomeAssistant,
     entry: FoodPlanningConfigEntry,
@@ -62,12 +102,7 @@ async def async_import_recipe(
             translation_domain=DOMAIN, translation_key="missing_input"
         )
 
-    extracted = await async_extract_recipe(
-        hass,
-        source,
-        language=entry.options.get(CONF_LANGUAGE, DEFAULT_LANGUAGE),
-        ai_task_entity=entry.options.get(CONF_AI_TASK_ENTITY),
-    )
+    extracted = await _async_extract(hass, entry, source)
     recipe = Recipe(
         title=extracted.title,
         ingredients=extracted.ingredients,

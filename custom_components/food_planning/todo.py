@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+
 from homeassistant.components.todo import (
     TodoItem,
     TodoItemStatus,
@@ -13,11 +15,20 @@ from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from .const import DOMAIN
-from .data import FoodPlanningConfigEntry
+from .data import (
+    FoodPlanningConfigEntry,
+    async_import_recipe,
+    async_structure_pasted_text,
+)
 from .entity import FoodPlanningEntity
 from .store import STATUS_COMPLETED, STATUS_NEEDS_ACTION, Recipe, ShoppingItem
 
 PARALLEL_UPDATES = 0
+
+# Free text shorter than this in a recipe's description is treated as a
+# personal note, not a pasted recipe, and is never sent to the AI.
+MIN_PASTED_TEXT_CHARS = 80
+_URL_RE = re.compile(r"^https?://\S+$")
 
 
 async def async_setup_entry(
@@ -69,12 +80,16 @@ class RecipeList(FoodPlanningEntity, TodoListEntity):
         ]
 
     async def async_create_todo_item(self, item: TodoItem) -> None:
-        """Add a recipe by hand."""
-        recipe = Recipe(title=item.summary or "")
+        """Add a recipe: a pasted link is imported, pasted text is structured."""
+        summary = (item.summary or "").strip()
+        if _URL_RE.match(summary) and not item.description:
+            await async_import_recipe(self.hass, self._entry, url=summary)
+            return
+        recipe = Recipe(title=summary)
         if item.description:
             recipe.apply_markdown(item.description)
         self._data.store.add_recipe(recipe)
-        await self._data.store.async_save()
+        await self._async_save_and_structure(recipe)
 
     async def async_update_todo_item(self, item: TodoItem) -> None:
         """Rename a recipe, edit it, or mark it as cooked."""
@@ -87,10 +102,25 @@ class RecipeList(FoodPlanningEntity, TodoListEntity):
         if item.status is not None:
             recipe.cooked = item.status == TodoItemStatus.COMPLETED
         # Only re-parse when the text actually changed, so an untouched
-        # description round-trips without losing structure.
+        # description round-trips without losing structure, and ticking a
+        # recipe off never triggers an AI call.
         if item.description is not None and item.description != recipe.to_markdown():
             recipe.apply_markdown(item.description)
+            await self._async_save_and_structure(recipe)
+        else:
+            await store.async_save()
+
+    async def _async_save_and_structure(self, recipe: Recipe) -> None:
+        """Save, then let the AI structure pasted free text into a recipe.
+
+        The pasted text is saved first, so it survives if the AI call fails.
+        """
+        store = self._data.store
         await store.async_save()
+        if recipe.ingredients or len(recipe.notes or "") < MIN_PASTED_TEXT_CHARS:
+            return
+        if await async_structure_pasted_text(self.hass, self._entry, recipe):
+            await store.async_save()
 
     async def async_delete_todo_items(self, uids: list[str]) -> None:
         """Delete recipes."""

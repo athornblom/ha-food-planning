@@ -16,6 +16,7 @@ class FoodPlanningEntity(Entity):
 
     def __init__(self, entry: FoodPlanningConfigEntry, platform: str, key: str) -> None:
         """Initialize the entity."""
+        self._entry = entry
         self._data = entry.runtime_data
         self._attr_translation_key = key
         self._attr_unique_id = f"{entry.entry_id}_{key}"
