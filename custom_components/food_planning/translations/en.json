@@ -77,6 +77,10 @@
         "recipe": {
           "name": "Recipe",
           "description": "Recipe title or ID."
+        },
+        "only_missing": {
+          "name": "Only missing",
+          "description": "Only add the ingredients that aren't at home."
         }
       }
     },

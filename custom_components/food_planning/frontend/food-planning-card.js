@@ -22,13 +22,17 @@ const STRINGS = {
     noMatch: "Inga recept matchar.",
     filterAll: "Alla",
     filterReady: "Redo att laga",
-    filterShopping: "Att handla",
+    filterMissing: "Saknar något",
     allCategories: "Alla kategorier",
     fieldCategories: "Kategorier",
     categoriesHint: "Kategorierna hanteras under Inställningar → Enheter och tjänster → Food Planning → Konfigurera.",
-    toBuy: (n) => `🛒 ${n} kvar att handla`,
+    missingBadge: (n) => `Saknar ${n}`,
+    notAtHome: "saknas hemma",
     ready: "✓ Redo att laga",
-    readyLong: "Allt är inhandlat. Dags att laga!",
+    readyLong: "Allt finns hemma. Dags att laga!",
+    missingLong: (items) => `Saknas hemma: ${items.join(", ")}`,
+    onList: (n) => `🛒 ${n} ${n === 1 ? "vara" : "varor"} på inköpslistan`,
+    addMissing: (n) => `Lägg saknade i inköpslistan (${n})`,
     cooked: "Lagad",
     cookedDone: "Markerad som lagad. Hemma uppdateras med det som gick åt.",
     ingredients: "Ingredienser",
@@ -66,13 +70,17 @@ const STRINGS = {
     noMatch: "No recipes match.",
     filterAll: "All",
     filterReady: "Ready to cook",
-    filterShopping: "To buy",
+    filterMissing: "Missing something",
     allCategories: "All categories",
     fieldCategories: "Categories",
     categoriesHint: "Manage categories under Settings → Devices & services → Food Planning → Configure.",
-    toBuy: (n) => `🛒 ${n} left to buy`,
+    missingBadge: (n) => `Missing ${n}`,
+    notAtHome: "not at home",
     ready: "✓ Ready to cook",
-    readyLong: "Everything is bought. Time to cook!",
+    readyLong: "Everything is at home. Time to cook!",
+    missingLong: (items) => `Not at home: ${items.join(", ")}`,
+    onList: (n) => `🛒 ${n} ${n === 1 ? "item" : "items"} on the shopping list`,
+    addMissing: (n) => `Add missing to shopping list (${n})`,
     cooked: "Cooked",
     cookedDone: "Marked as cooked. At home is being updated with what was used.",
     ingredients: "Ingredients",
@@ -309,7 +317,7 @@ class FoodPlanningCard extends HTMLElement {
     for (const [key, label] of [
       ["all", t.filterAll],
       ["ready", t.filterReady],
-      ["shopping", t.filterShopping],
+      ["missing", t.filterMissing],
     ]) {
       const chip = el("button", { cls: "chip", text: label, attrs: { "data-filter": key } });
       chip.addEventListener("click", () => {
@@ -424,7 +432,7 @@ class FoodPlanningCard extends HTMLElement {
     const tile = el("button", { cls: "tile", attrs: { type: "button" } });
     tile.append(recipeImage(recipe));
     if (recipe.status === "ready") tile.append(el("span", { cls: "badge ready", text: t.ready }));
-    if (recipe.status === "shopping") tile.append(el("span", { cls: "badge", text: t.toBuy(recipe.to_buy) }));
+    if (recipe.status === "missing") tile.append(el("span", { cls: "badge", text: t.missingBadge(recipe.missing.length) }));
     tile.append(
       el("span", { cls: "name", text: recipe.title }),
       el("span", {
@@ -571,6 +579,9 @@ class FoodPlanningRecipeDialog extends HTMLElement {
         line-height: 1.35;
       }
       ul.ingredients li.done { text-decoration: line-through; color: var(--secondary-text-color); }
+      ul.ingredients li.missing::after {
+        content: attr(data-note); color: var(--warning-color, #ffa600); font-size: 12px;
+      }
       ol.steps { margin: 0; padding: 0; list-style: none; counter-reset: step; }
       ol.steps li {
         counter-increment: step; position: relative; padding: 0 0 14px 40px; line-height: 1.5;
@@ -664,17 +675,23 @@ class FoodPlanningRecipeDialog extends HTMLElement {
     });
 
     let state = null;
-    if (recipe.status === "ready") {
-      const cookedButton = el("button", { text: `✓ ${t.cooked}` });
-      cookedButton.addEventListener("click", () => this._markCooked(cookedButton));
-      state = el("div", { cls: "state ready" }, el("span", { text: t.readyLong }), cookedButton);
-    } else if (recipe.status === "shopping") {
-      state = el("div", { cls: "state" }, el("span", { text: t.toBuy(recipe.to_buy) }));
+    const stateLines = [];
+    if (recipe.status === "ready") stateLines.push(t.readyLong);
+    if (recipe.status === "missing") stateLines.push(t.missingLong(recipe.missing));
+    if (recipe.on_list) stateLines.push(t.onList(recipe.on_list));
+    if (stateLines.length) {
+      state = el(
+        "div",
+        { cls: `state ${recipe.status === "ready" ? "ready" : ""}` },
+        el("span", {}, ...stateLines.map((line) => el("div", { text: line })))
+      );
     }
+    const missingSet = new Set(recipe.missing || []);
 
     const ingredients = el("ul", { cls: "ingredients" });
     for (const text of recipe.ingredients) {
-      const li = el("li", { text });
+      const li = el("li", { cls: missingSet.has(text) ? "missing" : "", text });
+      if (missingSet.has(text)) li.dataset.note = ` · ${t.notAtHome}`;
       // Tick off ingredients while cooking; only kept until the view closes.
       li.addEventListener("click", () => li.classList.toggle("done"));
       ingredients.append(li);
@@ -691,9 +708,20 @@ class FoodPlanningRecipeDialog extends HTMLElement {
       right.append(el("h3", { text: t.notes }), el("div", { cls: "notes", text: recipe.notes }));
     }
 
-    const addButton = el("button", { text: `🛒 ${t.addToList}` });
-    addButton.addEventListener("click", () => this._addToList(addButton));
-    const actions = el("div", { cls: "actions" }, addButton, el("span", { cls: "spacer" }));
+    const onlyMissing = recipe.status === "missing";
+    const addButton = el("button", {
+      text: `🛒 ${onlyMissing ? t.addMissing(recipe.missing.length) : t.addToList}`,
+    });
+    addButton.addEventListener("click", () => this._addToList(addButton, onlyMissing));
+    const cookedButton = el("button", { cls: "secondary", text: `✓ ${t.cooked}` });
+    cookedButton.addEventListener("click", () => this._markCooked(cookedButton));
+    const actions = el(
+      "div",
+      { cls: "actions" },
+      addButton,
+      cookedButton,
+      el("span", { cls: "spacer" })
+    );
     if (this._confirmingDelete) {
       const cancel = el("button", { cls: "secondary", text: t.cancel });
       cancel.addEventListener("click", () => {
@@ -822,14 +850,14 @@ class FoodPlanningRecipeDialog extends HTMLElement {
     title.focus();
   }
 
-  async _addToList(button) {
+  async _addToList(button, onlyMissing = false) {
     button.disabled = true;
     try {
       const result = await this._hass.callWS({
         type: "call_service",
         domain: DOMAIN,
         service: "add_recipe_to_shopping_list",
-        service_data: { recipe: this._uid },
+        service_data: { recipe: this._uid, only_missing: onlyMissing },
         return_response: true,
       });
       this._setStatus(this._t.added(result?.response?.added ?? 0));
@@ -876,6 +904,408 @@ if (!customElements.get("food-planning-card")) {
   });
 }
 
+/* ------------------------------------------------------------------ */
+/* Navigation between the dashboard's views                            */
+/* ------------------------------------------------------------------ */
+
+const NAV_STRINGS = {
+  sv: { shopping: "Inköpslista", pantry: "Hemma", recipes: "Recept" },
+  en: { shopping: "Shopping list", pantry: "At home", recipes: "Recipes" },
+};
+const NAV_ITEMS = [
+  { key: "shopping", path: "inkopslista", icon: "🛒" },
+  { key: "pantry", path: "hemma", icon: "🏠" },
+  { key: "recipes", path: "recept", icon: "📖" },
+];
+
+/**
+ * Tabs for the Food Planning views. Switching replaces the history entry,
+ * so the view's back arrow leaves the dashboard instead of going back
+ * through the tabs.
+ */
+class FoodPlanningNav extends HTMLElement {
+  constructor() {
+    super();
+    this.attachShadow({ mode: "open" });
+  }
+
+  setConfig(config) {
+    this._config = config || {};
+    this._t = NAV_STRINGS[this._config.language] || NAV_STRINGS.sv;
+    this._render();
+  }
+
+  set hass(_hass) {}
+
+  getCardSize() {
+    return 1;
+  }
+
+  getGridOptions() {
+    return { columns: "full", rows: 1 };
+  }
+
+  _render() {
+    const parts = window.location.pathname.split("/").filter(Boolean);
+    const current = parts[parts.length - 1];
+    const base = "/" + parts.slice(0, -1).join("/");
+    const nav = el("nav", { attrs: { role: "tablist" } });
+    for (const item of NAV_ITEMS) {
+      const active = item.path === (this._config.active || current);
+      const tab = el("button", {
+        cls: active ? "active" : "",
+        attrs: { role: "tab", "aria-selected": String(active) },
+      }, el("span", { cls: "icon", text: item.icon }), el("span", { text: this._t[item.key] }));
+      tab.addEventListener("click", () => {
+        if (active) return;
+        window.history.replaceState(window.history.state, "", `${base}/${item.path}`);
+        window.dispatchEvent(new CustomEvent("location-changed", { detail: { replace: true } }));
+      });
+      nav.append(tab);
+    }
+    const style = el("style", {
+      text: `
+      nav {
+        display: flex; gap: 4px; padding: 4px; border-radius: 999px;
+        background: var(--card-background-color); box-shadow: var(--ha-card-box-shadow, none);
+        border: 1px solid var(--divider-color);
+      }
+      button {
+        flex: 1; display: flex; align-items: center; justify-content: center; gap: 8px;
+        font: inherit; font-weight: 500; cursor: pointer; border: none; border-radius: 999px;
+        padding: 10px 12px; background: transparent; color: var(--primary-text-color);
+      }
+      button.active { background: var(--primary-color); color: var(--text-primary-color, #fff); }
+      @media (max-width: 420px) { .icon { display: none; } }
+    `,
+    });
+    this.shadowRoot.replaceChildren(style, nav);
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Shopping list / At home list card                                   */
+/* ------------------------------------------------------------------ */
+
+const LIST_STRINGS = {
+  sv: {
+    shopping: {
+      title: "Inköpslista", open: "Att köpa", done: "I korgen",
+      empty: "Inköpslistan är tom.", add: "Lägg till vara…",
+      move: (n) => `🏠 Flytta till Hemma (${n})`, clear: "Rensa korgen",
+      moved: (n) => `${n} ${n === 1 ? "vara" : "varor"} flyttades till Hemma.`,
+    },
+    pantry: {
+      title: "Hemma", open: "Finns hemma", done: "Slut",
+      empty: "Inget registrerat hemma än.", add: "Lägg till något som finns hemma…",
+      clear: "Rensa det som är slut",
+    },
+    edit: "Ändra", remove: "Ta bort", save: "Spara", cancel: "Avbryt",
+    showDone: (n) => `Visa (${n})`, hideDone: "Dölj",
+    merging: "Dubbletter slås ihop automatiskt.",
+  },
+  en: {
+    shopping: {
+      title: "Shopping list", open: "To buy", done: "In the basket",
+      empty: "The shopping list is empty.", add: "Add an item…",
+      move: (n) => `🏠 Move home (${n})`, clear: "Clear basket",
+      moved: (n) => `${n} ${n === 1 ? "item" : "items"} moved to At home.`,
+    },
+    pantry: {
+      title: "At home", open: "At home", done: "Used up",
+      empty: "Nothing at home yet.", add: "Add something you have…",
+      clear: "Clear used up",
+    },
+    edit: "Edit", remove: "Delete", save: "Save", cancel: "Cancel",
+    showDone: (n) => `Show (${n})`, hideDone: "Hide",
+    merging: "Duplicates are merged automatically.",
+  },
+};
+
+/**
+ * A food list (shopping list or At home) on top of the integration's to-do
+ * entity. Uses Home Assistant's to-do API, so it stays in sync with Assist,
+ * the companion app and the AI merging.
+ *
+ *   type: custom:food-planning-list-card
+ *   list: shopping | pantry
+ */
+class FoodPlanningListCard extends HTMLElement {
+  constructor() {
+    super();
+    this.attachShadow({ mode: "open" });
+    this._items = null;
+    this._editing = null;
+    this._showDone = false;
+    this._unsub = null;
+    this._subscribedTo = null;
+  }
+
+  setConfig(config) {
+    if (!config || !["shopping", "pantry"].includes(config.list)) {
+      throw new Error("list must be 'shopping' or 'pantry'");
+    }
+    this._config = config;
+    const strings = LIST_STRINGS[config.language] || LIST_STRINGS.sv;
+    this._t = { ...strings, ...strings[config.list] };
+    this._render();
+  }
+
+  set hass(hass) {
+    this._hass = hass;
+    const entity =
+      this._config.entity ||
+      findListEntity(
+        hass,
+        this._config.list === "shopping" ? "shopping_list" : "pantry",
+        this._config.list === "shopping" ? "todo.food_planning_shopping_list" : "todo.food_planning_pantry"
+      );
+    if (entity !== this._entity) {
+      this._entity = entity;
+      this._subscribe();
+    }
+  }
+
+  connectedCallback() {
+    if (this._hass && !this._unsub) this._subscribe();
+  }
+
+  disconnectedCallback() {
+    this._unsubscribe();
+  }
+
+  getCardSize() {
+    return 6;
+  }
+
+  getGridOptions() {
+    return { columns: "full", min_rows: 4 };
+  }
+
+  _unsubscribe() {
+    if (this._unsub) {
+      const unsub = this._unsub;
+      this._unsub = null;
+      unsub.then((fn) => fn()).catch(() => {});
+    }
+  }
+
+  _subscribe() {
+    if (!this._hass || !this._entity || !this.isConnected) return;
+    this._unsubscribe();
+    this._unsub = this._hass.connection.subscribeMessage(
+      (msg) => {
+        this._items = msg.items || [];
+        this._render();
+      },
+      { type: "todo/item/subscribe", entity_id: this._entity }
+    );
+    this._unsub.catch((err) => this._setStatus(errorMessage(err), true));
+  }
+
+  async _call(service, data) {
+    try {
+      return await this._hass.callWS({
+        type: "call_service",
+        domain: "todo",
+        service,
+        service_data: data,
+        target: { entity_id: this._entity },
+      });
+    } catch (err) {
+      this._setStatus(errorMessage(err), true);
+      return null;
+    }
+  }
+
+  _setStatus(text, isError = false) {
+    this._statusText = text ? { text, isError } : null;
+    if (!this._status) return;
+    this._status.textContent = text || "";
+    this._status.classList.toggle("error", isError);
+    this._status.toggleAttribute("hidden", !text);
+  }
+
+  _render() {
+    if (!this._config) return;
+    const t = this._t;
+    const items = this._items || [];
+    const open = items.filter((i) => i.status !== "completed");
+    const done = items.filter((i) => i.status === "completed");
+
+    const style = el("style", {
+      text:
+        SHARED_CSS +
+        `
+      ha-card { padding: 16px; }
+      h1 { margin: 0 0 12px; font-size: 20px; font-weight: 500; }
+      form.add { display: flex; gap: 8px; }
+      form.add input { flex: 1; }
+      .toolbar { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+      h2 {
+        display: flex; align-items: center; justify-content: space-between;
+        margin: 20px 0 4px; font-size: 13px; letter-spacing: 0.08em; text-transform: uppercase;
+        color: var(--secondary-text-color); font-weight: 600;
+      }
+      h2 button { padding: 2px 10px; font-size: 12px; text-transform: none; letter-spacing: 0; }
+      ul { list-style: none; margin: 0; padding: 0; }
+      li {
+        display: flex; align-items: center; gap: 10px; padding: 6px 0;
+        border-bottom: 1px solid var(--divider-color);
+      }
+      li input[type=checkbox] { width: 20px; height: 20px; flex: none; accent-color: var(--primary-color); cursor: pointer; }
+      .text { flex: 1; min-width: 0; cursor: text; }
+      .summary { line-height: 1.35; overflow-wrap: anywhere; }
+      .done .summary { text-decoration: line-through; color: var(--secondary-text-color); }
+      .desc { font-size: 12px; color: var(--secondary-text-color); margin-top: 2px; }
+      .icon-button {
+        flex: none; width: 32px; height: 32px; padding: 0; border-radius: 50%;
+        background: transparent; color: var(--secondary-text-color); font-size: 15px;
+      }
+      .icon-button:hover { background: var(--secondary-background-color); color: var(--fp-danger); }
+      li.editing { flex-wrap: wrap; }
+      li.editing input[type=text] { flex: 1 1 200px; }
+      .empty { color: var(--secondary-text-color); margin: 16px 0 4px; }
+      .note { font-size: 12px; color: var(--secondary-text-color); margin: 12px 0 0; }
+    `,
+    });
+
+    const addInput = el("input", { attrs: { type: "text", placeholder: t.add } });
+    const addForm = el("form", { cls: "add" }, addInput, el("button", { text: "+", attrs: { type: "submit", "aria-label": t.add } }));
+    addForm.addEventListener("submit", async (ev) => {
+      ev.preventDefault();
+      const value = addInput.value.trim();
+      if (!value) return;
+      addInput.value = "";
+      await this._call("add_item", { item: value });
+      this.shadowRoot.querySelector("form.add input")?.focus();
+    });
+
+    const toolbar = el("div", { cls: "toolbar" });
+    if (this._config.list === "shopping" && done.length) {
+      const move = el("button", { text: t.move(done.length) });
+      move.addEventListener("click", async () => {
+        move.disabled = true;
+        try {
+          const result = await this._hass.callWS({
+            type: "call_service",
+            domain: DOMAIN,
+            service: "move_bought_to_pantry",
+            service_data: {},
+            return_response: true,
+          });
+          this._setStatus(t.moved(result?.response?.moved ?? done.length));
+        } catch (err) {
+          this._setStatus(errorMessage(err), true);
+          move.disabled = false;
+        }
+      });
+      toolbar.append(move);
+    }
+    if (done.length) {
+      const clear = el("button", { cls: "secondary", text: t.clear });
+      clear.addEventListener("click", () => this._call("remove_completed_items", {}));
+      toolbar.append(clear);
+    }
+    this._status = el("p", { cls: "status", attrs: { hidden: "" } });
+
+    const content = [];
+    if (this._items !== null && !items.length) content.push(el("p", { cls: "empty", text: t.empty }));
+    if (open.length) {
+      content.push(el("h2", {}, el("span", { text: `${t.open} (${open.length})` })));
+      content.push(el("ul", {}, ...open.map((item) => this._row(item))));
+    }
+    if (done.length) {
+      const toggle = el("button", { cls: "secondary", text: this._showDone ? t.hideDone : t.showDone(done.length) });
+      toggle.addEventListener("click", () => {
+        this._showDone = !this._showDone;
+        this._render();
+      });
+      content.push(el("h2", {}, el("span", { text: `${t.done} (${done.length})` }), toggle));
+      if (this._showDone) content.push(el("ul", {}, ...done.map((item) => this._row(item))));
+    }
+
+    const card = el(
+      "ha-card",
+      {},
+      this._config.title === false ? null : el("h1", { text: this._config.title || t.title }),
+      addForm,
+      toolbar.childElementCount ? toolbar : null,
+      this._status,
+      ...content,
+      el("p", { cls: "note", text: t.merging })
+    );
+    const focused = this.shadowRoot.activeElement;
+    const keepAdd = focused && focused.closest && focused.closest("form.add") ? this.shadowRoot.querySelector("form.add input")?.value : null;
+    this.shadowRoot.replaceChildren(style, card);
+    if (keepAdd !== null && keepAdd !== undefined) {
+      addInput.value = keepAdd;
+      addInput.focus();
+    }
+    if (this._statusText) this._setStatus(this._statusText.text, this._statusText.isError);
+    this.shadowRoot.querySelector("li.editing input[type=text]")?.focus();
+  }
+
+  _row(item) {
+    const t = this._t;
+    const isDone = item.status === "completed";
+    if (this._editing === item.uid) {
+      const input = el("input", { attrs: { type: "text" } });
+      input.value = item.summary;
+      const save = el("button", { text: t.save, attrs: { type: "submit" } });
+      const cancel = el("button", { cls: "secondary", text: t.cancel, attrs: { type: "button" } });
+      const form = el("form", { cls: "edit-form" }, input, save, cancel);
+      const li = el("li", { cls: "editing" }, form);
+      form.style.cssText = "display:flex;gap:8px;flex:1;flex-wrap:wrap";
+      const stop = () => {
+        this._editing = null;
+        this._render();
+      };
+      cancel.addEventListener("click", stop);
+      input.addEventListener("keydown", (ev) => {
+        if (ev.key === "Escape") stop();
+      });
+      form.addEventListener("submit", async (ev) => {
+        ev.preventDefault();
+        const value = input.value.trim();
+        this._editing = null;
+        if (value && value !== item.summary) await this._call("update_item", { item: item.uid, rename: value });
+        this._render();
+      });
+      return li;
+    }
+
+    const check = el("input", { attrs: { type: "checkbox", "aria-label": item.summary } });
+    check.checked = isDone;
+    check.addEventListener("change", () =>
+      this._call("update_item", { item: item.uid, status: check.checked ? "completed" : "needs_action" })
+    );
+    const text = el(
+      "div",
+      { cls: "text", attrs: { title: t.edit } },
+      el("div", { cls: "summary", text: item.summary }),
+      item.description ? el("div", { cls: "desc", text: item.description }) : null
+    );
+    text.addEventListener("click", () => {
+      this._editing = item.uid;
+      this._render();
+    });
+    const remove = el("button", { cls: "icon-button", text: "✕", attrs: { "aria-label": t.remove, title: t.remove } });
+    remove.addEventListener("click", () => this._call("remove_item", { item: [item.uid] }));
+    return el("li", { cls: isDone ? "done" : "" }, check, text, remove);
+  }
+}
+
+if (!customElements.get("food-planning-nav")) {
+  customElements.define("food-planning-nav", FoodPlanningNav);
+  customElements.define("food-planning-list-card", FoodPlanningListCard);
+  window.customCards = window.customCards || [];
+  window.customCards.push(
+    { type: "food-planning-nav", name: "Food Planning navigation", description: "Tabs between the Food Planning views." },
+    { type: "food-planning-list-card", name: "Food Planning list", description: "The shopping list or the At home list." }
+  );
+}
+
 /*
  * Dashboard strategy: generates the whole Food Planning dashboard, so it
  * ships with (and is updated by) the integration.
@@ -915,52 +1345,31 @@ function findListEntity(hass, key, fallback) {
 // HA finds a custom dashboard strategy by the element name
 // ll-strategy-dashboard-<type> and calls its static generate(config, hass).
 class FoodPlanningDashboardStrategy extends HTMLElement {
-  static async generate(config, hass) {
+  static async generate(config, _hass) {
     const t = DASHBOARD_STRINGS[config?.language] || DASHBOARD_STRINGS.sv;
-    const shopping = findListEntity(hass, "shopping_list", "todo.food_planning_shopping_list");
-    const pantry = findListEntity(hass, "pantry", "todo.food_planning_pantry");
-    const listView = (title, path, cards) => ({
+    const lang = config?.language ? { language: config.language } : {};
+    // Subviews: the header shows a back arrow to wherever the dashboard was
+    // opened from (or back_path), and the nav card switches between views.
+    const view = (title, path, card) => ({
       title,
       path,
+      subview: true,
+      ...(config?.back_path ? { back_path: config.back_path } : {}),
       type: "sections",
-      max_columns: 2,
-      sections: [{ type: "grid", column_span: 2, cards }],
+      max_columns: 3,
+      sections: [
+        {
+          type: "grid",
+          column_span: 3,
+          cards: [{ type: "custom:food-planning-nav", active: path, ...lang }, card],
+        },
+      ],
     });
     return {
       views: [
-        listView(t.shopping, "inkopslista", [
-          {
-            type: "shortcut",
-            label: t.moveHome,
-            icon: "mdi:home-import-outline",
-            tap_action: {
-              action: "perform-action",
-              perform_action: `${DOMAIN}.move_bought_to_pantry`,
-              confirmation: { text: t.moveHomeConfirm },
-            },
-          },
-          { type: "todo-list", entity: shopping, title: t.shopping },
-        ]),
-        listView(t.pantry, "hemma", [{ type: "todo-list", entity: pantry, title: t.pantry }]),
-        {
-          title: t.recipes,
-          path: "recept",
-          type: "sections",
-          max_columns: 3,
-          sections: [
-            {
-              type: "grid",
-              column_span: 3,
-              cards: [
-                {
-                  type: "custom:food-planning-card",
-                  title: t.recipes,
-                  ...(config?.language ? { language: config.language } : {}),
-                },
-              ],
-            },
-          ],
-        },
+        view(t.shopping, "inkopslista", { type: "custom:food-planning-list-card", list: "shopping", ...lang }),
+        view(t.pantry, "hemma", { type: "custom:food-planning-list-card", list: "pantry", ...lang }),
+        view(t.recipes, "recept", { type: "custom:food-planning-card", title: t.recipes, ...lang }),
       ],
     };
   }

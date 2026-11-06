@@ -21,5 +21,9 @@ add_recipe_to_shopping_list:
       example: "Pasta carbonara"
       selector:
         text:
+    only_missing:
+      default: false
+      selector:
+        boolean:
 
 move_bought_to_pantry:

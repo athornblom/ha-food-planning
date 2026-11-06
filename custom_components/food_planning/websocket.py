@@ -38,17 +38,26 @@ def _loaded_entry(hass: HomeAssistant) -> FoodPlanningConfigEntry | None:
 
 
 def _recipe_json(store: FoodPlanningStore, recipe: Recipe) -> dict[str, Any]:
-    open_count, bought = store.recipe_shopping_status(recipe)
-    if open_count:
-        status = "shopping"
-    elif recipe.on_shopping_list:
-        status = "ready"
-    else:
+    open_count, _bought = store.recipe_shopping_status(recipe)
+    missing = (
+        None
+        if recipe.missing is None
+        else [
+            recipe.ingredients[i] for i in recipe.missing if i < len(recipe.ingredients)
+        ]
+    )
+    if missing is None:
         status = None
+    elif missing:
+        status = "missing"
+    else:
+        status = "ready"
     return {
+        # "ready": everything is at home; "missing": see "missing";
+        # None: not checked yet. "on_list": items still to buy for it.
         "status": status,
-        "to_buy": open_count,
-        "bought": bought,
+        "missing": missing,
+        "on_list": open_count,
         "uid": recipe.uid,
         "title": recipe.title,
         "servings": recipe.servings,

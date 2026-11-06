@@ -12,6 +12,7 @@ from .const import CONF_AI_TASK_ENTITY, CONF_LANGUAGE, DEFAULT_LANGUAGE, DOMAIN
 from .extraction import RecipeSource, async_extract_recipe, async_fetch_source
 from .images import async_delete_image, async_save_image
 from .merge import ListMerger
+from .pantry_match import PantryMatcher
 from .store import PANTRY, SHOPPING, FoodPlanningStore, Recipe
 
 type FoodPlanningConfigEntry = ConfigEntry[FoodPlanningData]
@@ -24,6 +25,8 @@ class FoodPlanningData:
     store: FoodPlanningStore
     # One per list (SHOPPING, PANTRY): merges duplicates after additions.
     mergers: dict[str, ListMerger]
+    # Re-checks which recipe ingredients are missing at home.
+    matcher: PantryMatcher
 
 
 async def async_import_recipe(
@@ -71,13 +74,16 @@ async def async_import_recipe(
     return recipe
 
 
-def async_add_recipe_to_shopping(entry: FoodPlanningConfigEntry, recipe: Recipe) -> int:
-    """Add a recipe's ingredients and schedule a duplicate merge.
+def async_add_recipe_to_shopping(
+    entry: FoodPlanningConfigEntry, recipe: Recipe, *, only_missing: bool = False
+) -> int:
+    """Add a recipe's ingredients (or only those missing at home).
 
-    The caller saves the store. Returns the number of items added.
+    Schedules a duplicate merge. The caller saves the store. Returns the
+    number of items added.
     """
     data = entry.runtime_data
-    added = data.store.add_recipe_to_shopping(recipe)
+    added = data.store.add_recipe_to_shopping(recipe, only_missing=only_missing)
     data.mergers[SHOPPING].async_schedule(item.uid for item in added)
     return len(added)
 

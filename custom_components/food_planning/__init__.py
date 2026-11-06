@@ -24,6 +24,7 @@ from .const import (
 from .data import FoodPlanningConfigEntry, FoodPlanningData
 from .images import async_delete_all_images, async_repair_images, ensure_images_dir
 from .merge import ListMerger
+from .pantry_match import PantryMatcher
 from .services import async_setup_services
 from .store import LISTS, FoodPlanningStore
 from .websocket import async_setup_websocket
@@ -67,7 +68,12 @@ async def async_setup_entry(
     mergers = {name: ListMerger(hass, entry, name) for name in LISTS}
     for merger in mergers.values():
         entry.async_on_unload(merger.async_cancel)
-    entry.runtime_data = FoodPlanningData(store=store, mergers=mergers)
+    matcher = PantryMatcher(hass, entry)
+    entry.async_on_unload(matcher.async_cancel)
+    entry.runtime_data = FoodPlanningData(store=store, mergers=mergers, matcher=matcher)
+    # Re-check missing ingredients whenever the pantry or recipes change.
+    entry.async_on_unload(store.async_add_listener(matcher.async_schedule))
+    matcher.async_schedule()
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     entry.async_create_background_task(
         hass, async_repair_images(hass, store), "food_planning image repair"

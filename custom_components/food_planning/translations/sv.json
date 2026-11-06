@@ -77,6 +77,10 @@
         "recipe": {
           "name": "Recept",
           "description": "Receptets namn eller ID."
+        },
+        "only_missing": {
+          "name": "Bara saknade",
+          "description": "Lägg bara till ingredienser som inte finns hemma."
         }
       }
     },

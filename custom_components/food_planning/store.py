@@ -78,6 +78,9 @@ class Recipe:
     # the recipe is marked as cooked. Drives "ready to cook".
     on_shopping_list: bool = False
     categories: list[str] = field(default_factory=list)
+    # Indexes of ingredients not at home, as worked out by the AI after the
+    # pantry or the recipe changed; None until checked. See pantry_match.py.
+    missing: list[int] | None = None
     uid: str = field(default_factory=_new_uid)
     created: str = field(default_factory=lambda: dt_util.utcnow().isoformat())
 
@@ -314,7 +317,9 @@ class FoodPlanningStore:
         items.insert(index, item)
         return True
 
-    def add_recipe_to_shopping(self, recipe: Recipe) -> list[ShoppingItem]:
+    def add_recipe_to_shopping(
+        self, recipe: Recipe, *, only_missing: bool = False
+    ) -> list[ShoppingItem]:
         """Add a recipe's ingredients, skipping exact copies of open items.
 
         Near-duplicates ("2 msk olivolja" vs "15 ml olivolja") are merged
@@ -325,7 +330,14 @@ class FoodPlanningStore:
         open_items: dict[str, ShoppingItem] = {
             s.summary.casefold(): s for s in self.open_items(SHOPPING)
         }
-        for ingredient in recipe.ingredients:
+        ingredients = recipe.ingredients
+        if only_missing and recipe.missing is not None:
+            ingredients = [
+                recipe.ingredients[i]
+                for i in recipe.missing
+                if i < len(recipe.ingredients)
+            ]
+        for ingredient in ingredients:
             if existing := open_items.get(ingredient.casefold()):
                 if recipe.uid not in existing.recipe_uids:
                     existing.recipe_uids.append(recipe.uid)
