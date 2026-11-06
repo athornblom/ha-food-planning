@@ -1,0 +1,22 @@
+{
+  "entity": {
+    "button": {
+      "import_recipe": { "default": "mdi:download" },
+      "add_to_shopping_list": { "default": "mdi:cart-plus" }
+    },
+    "select": {
+      "selected_recipe": { "default": "mdi:chef-hat" }
+    },
+    "text": {
+      "recipe_url": { "default": "mdi:link-variant" }
+    },
+    "todo": {
+      "recipes": { "default": "mdi:book-open-variant" },
+      "shopping_list": { "default": "mdi:cart" }
+    }
+  },
+  "services": {
+    "import_recipe": { "service": "mdi:download" },
+    "add_recipe_to_shopping_list": { "service": "mdi:cart-plus" }
+  }
+}

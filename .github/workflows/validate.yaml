@@ -1,0 +1,15 @@
+name: Validate for the Marketplace
+
+# The Marketplace only reads public repositories, so this check can't pass
+# while the repo is private. Run it by hand once the repo is public, then
+# add `push` and `pull_request` triggers.
+on:
+  workflow_dispatch:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: hacs/action@main
+        with:
+          category: integration

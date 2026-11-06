@@ -1,0 +1,15 @@
+{
+  "domain": "food_planning",
+  "name": "Food Planning",
+  "after_dependencies": ["ai_task"],
+  "codeowners": ["@athornblom"],
+  "config_flow": true,
+  "dependencies": ["todo"],
+  "documentation": "https://github.com/athornblom/ha-food-planning",
+  "integration_type": "service",
+  "iot_class": "calculated",
+  "issue_tracker": "https://github.com/athornblom/ha-food-planning/issues",
+  "requirements": [],
+  "single_config_entry": true,
+  "version": "0.1.0"
+}

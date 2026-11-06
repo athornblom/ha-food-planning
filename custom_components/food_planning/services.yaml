@@ -1,0 +1,23 @@
+import_recipe:
+  fields:
+    url:
+      example: "https://www.tiktok.com/@someone/video/1234567890"
+      selector:
+        text:
+          type: url
+    text:
+      selector:
+        text:
+          multiline: true
+    add_to_shopping_list:
+      default: false
+      selector:
+        boolean:
+
+add_recipe_to_shopping_list:
+  fields:
+    recipe:
+      required: true
+      example: "Pasta carbonara"
+      selector:
+        text:

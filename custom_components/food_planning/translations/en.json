@@ -1,0 +1,92 @@
+{
+  "config": {
+    "abort": {
+      "single_instance_allowed": "Food Planning is already set up."
+    },
+    "step": {
+      "user": {
+        "description": "Recipes are extracted by an AI task entity, for example one from the Anthropic integration.",
+        "data": {
+          "ai_task_entity": "AI task entity",
+          "language": "Recipe language"
+        },
+        "data_description": {
+          "ai_task_entity": "Leave empty to use the preferred AI task entity from Settings > System > General.",
+          "language": "Imported recipes are written in this language, e.g. Swedish."
+        }
+      }
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "data": {
+          "ai_task_entity": "AI task entity",
+          "language": "Recipe language"
+        },
+        "data_description": {
+          "ai_task_entity": "Leave empty to use the preferred AI task entity from Settings > System > General.",
+          "language": "Imported recipes are written in this language, e.g. Swedish."
+        }
+      }
+    }
+  },
+  "entity": {
+    "button": {
+      "import_recipe": { "name": "Import recipe" },
+      "add_to_shopping_list": { "name": "Add to shopping list" }
+    },
+    "select": {
+      "selected_recipe": { "name": "Selected recipe" }
+    },
+    "text": {
+      "recipe_url": { "name": "Recipe link" }
+    },
+    "todo": {
+      "recipes": { "name": "Recipes" },
+      "shopping_list": { "name": "Food shopping list" }
+    }
+  },
+  "services": {
+    "import_recipe": {
+      "name": "Import recipe",
+      "description": "Extracts a recipe from a link or pasted text and saves it to the recipe list.",
+      "fields": {
+        "url": {
+          "name": "Link",
+          "description": "Recipe page or TikTok video. TikTok recipes are read from the video's caption."
+        },
+        "text": {
+          "name": "Text",
+          "description": "Recipe text to extract from instead of a link."
+        },
+        "add_to_shopping_list": {
+          "name": "Add to shopping list",
+          "description": "Also add the ingredients to the shopping list."
+        }
+      }
+    },
+    "add_recipe_to_shopping_list": {
+      "name": "Add recipe to shopping list",
+      "description": "Adds a saved recipe's ingredients to the shopping list, skipping ones already on it.",
+      "fields": {
+        "recipe": {
+          "name": "Recipe",
+          "description": "Recipe title or ID."
+        }
+      }
+    }
+  },
+  "exceptions": {
+    "not_loaded": { "message": "Food Planning is not set up or not loaded." },
+    "missing_input": { "message": "Paste a recipe link or text first." },
+    "fetch_failed": { "message": "Could not fetch {url}." },
+    "tiktok_no_caption": { "message": "The TikTok video has no caption to read a recipe from." },
+    "no_recipe_found": { "message": "No recipe was found in the content." },
+    "ai_task_missing": { "message": "No AI task integration is available. Set up one, for example Anthropic, first." },
+    "ai_task_bad_response": { "message": "The AI task returned an unexpected response." },
+    "recipe_not_found": { "message": "No saved recipe matches \"{recipe}\"." },
+    "no_recipe_selected": { "message": "Select a recipe first." },
+    "item_not_found": { "message": "Item {uid} was not found." }
+  }
+}
