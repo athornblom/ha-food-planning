@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from html.parser import HTMLParser
 import json
 import logging
+import re
 from typing import Any
 from urllib.parse import urlparse
 
@@ -221,8 +222,44 @@ def _parse_page(html: str, url: str) -> RecipeSource:
     return RecipeSource(text=parser.text, url=url, image_url=parser.image_url)
 
 
-async def _async_fetch_tiktok(hass: HomeAssistant, url: str) -> RecipeSource:
-    """Read a TikTok video's caption through TikTok's oEmbed endpoint."""
+_TIKTOK_DATA_RE = re.compile(
+    r'<script[^>]+id="__UNIVERSAL_DATA_FOR_REHYDRATION__"[^>]*>(.*?)</script>',
+    re.DOTALL,
+)
+
+
+def _parse_tiktok_page(html: str, url: str) -> RecipeSource | None:
+    """Read the caption from the data TikTok embeds in a video page.
+
+    Runs in the executor. Returns None if the page has no caption data.
+    """
+    match = _TIKTOK_DATA_RE.search(html)
+    if not match:
+        return None
+    try:
+        data = json.loads(match.group(1))
+        item = data["__DEFAULT_SCOPE__"]["webapp.video-detail"]["itemInfo"][
+            "itemStruct"
+        ]
+    except (ValueError, KeyError, TypeError):
+        return None
+    caption = (item.get("desc") or "").strip()
+    if not caption:
+        return None
+    author = (item.get("author") or {}).get("nickname")
+    cover = (item.get("video") or {}).get("cover")
+    text = f"TikTok video by {author}\n\n{caption}" if author else caption
+    return RecipeSource(
+        text=text, url=url, image_url=cover if isinstance(cover, str) else None
+    )
+
+
+async def _async_fetch_tiktok_oembed(hass: HomeAssistant, url: str) -> RecipeSource:
+    """Fallback: read a TikTok video's caption through TikTok's oEmbed endpoint.
+
+    TikTok has stopped including the caption there for some videos, so this
+    is only tried when the video page itself has no caption data.
+    """
     session = async_get_clientsession(hass)
     try:
         async with session.get(
@@ -235,7 +272,7 @@ async def _async_fetch_tiktok(hass: HomeAssistant, url: str) -> RecipeSource:
             data = await resp.json(content_type=None)
     except (ClientError, TimeoutError, ValueError) as err:
         _LOGGER.debug("TikTok oEmbed failed for %s: %s", url, err)
-        raise _error("fetch_failed", url=url, reason=type(err).__name__) from err
+        raise _error("tiktok_no_caption") from err
 
     caption = (data.get("title") or "").strip()
     if not caption:
@@ -265,14 +302,12 @@ async def _async_get_page(hass: HomeAssistant, url: str) -> tuple[str, str]:
 
 async def async_fetch_source(hass: HomeAssistant, url: str) -> RecipeSource:
     """Fetch a URL and return the text to extract a recipe from."""
-    if _is_tiktok(url):
-        return await _async_fetch_tiktok(hass, url)
-
     final_url, html = await _async_get_page(hass, url)
 
-    # Short links (e.g. vm.tiktok.com) only reveal TikTok after redirects.
+    # Checked after redirects, so short links (vm.tiktok.com) work too.
     if _is_tiktok(final_url):
-        return await _async_fetch_tiktok(hass, final_url)
+        source = await hass.async_add_executor_job(_parse_tiktok_page, html, final_url)
+        return source or await _async_fetch_tiktok_oembed(hass, final_url)
 
     source = await hass.async_add_executor_job(_parse_page, html, url)
     if not source.text:

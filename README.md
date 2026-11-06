@@ -15,8 +15,8 @@ Anthropic with Claude Haiku 5.5), not in this integration.
    structured data. If it's there, only that is sent to the model, which
    keeps imports small and accurate. Otherwise the page's visible text is
    sent.
-2. **TikTok:** the video's caption is read through TikTok's public oEmbed
-   endpoint. Videos where the recipe is only spoken, with nothing written
+2. **TikTok:** the video's caption is read from the data TikTok embeds in
+   the public video page (with TikTok's oEmbed endpoint as a fallback). Videos where the recipe is only spoken, with nothing written
    in the caption, can't be imported yet.
 3. **Sites that block automated access** (some large recipe sites do) are
    respected rather than worked around: the import fails with a message
