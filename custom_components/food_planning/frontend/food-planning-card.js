@@ -474,6 +474,17 @@ class FoodPlanningCard extends HTMLElement {
   }
 }
 
+/** Round icon button for the recipe view's corner; HA's mdi icon if available. */
+function cornerButton(icon, fallback, label) {
+  const button = el("button", { attrs: { type: "button", "aria-label": label, title: label } });
+  if (customElements.get("ha-icon")) {
+    button.append(el("ha-icon", { attrs: { icon } }));
+  } else {
+    button.textContent = fallback;
+  }
+  return button;
+}
+
 function recipeImage(recipe, cls) {
   const src = safeUrl(recipe.image_url);
   const placeholder = () => el("div", { cls: `placeholder ${cls || ""}`, text: "🍽" });
@@ -607,8 +618,14 @@ class FoodPlanningRecipeDialog extends HTMLElement {
       .corner { position: absolute; top: 12px; right: 12px; display: flex; gap: 8px; }
       .corner button {
         width: 40px; height: 40px; padding: 0; border-radius: 50%;
-        background: rgba(0, 0, 0, 0.55); color: #fff; font-size: 18px; line-height: 40px;
+        display: flex; align-items: center; justify-content: center;
+        background: rgba(0, 0, 0, 0.45); color: #fff; font-size: 18px;
+        backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px);
+        transition: background 0.15s;
       }
+      .corner button:hover { background: rgba(0, 0, 0, 0.65); }
+      .corner button.on { background: var(--primary-color); color: var(--text-primary-color, #fff); }
+      .corner ha-icon { --mdc-icon-size: 22px; }
       .content { padding: 20px 24px 24px; }
       h2 { margin: 0; font-size: 26px; line-height: 1.2; font-weight: 600; padding-right: 96px; }
       .hero + .corner + .content h2 { padding-right: 0; }
@@ -680,7 +697,16 @@ class FoodPlanningRecipeDialog extends HTMLElement {
     const t = this._t;
     const corner = el("div", { cls: "corner" });
     if (!this._editing) {
-      const editButton = el("button", { text: "✎", attrs: { "aria-label": t.edit, title: t.edit } });
+      const cookingButton = cornerButton(
+        "mdi:chef-hat",
+        "🍳",
+        this._cooking ? t.cookingOn : t.cookingMode
+      );
+      cookingButton.classList.toggle("on", Boolean(this._cooking));
+      cookingButton.setAttribute("aria-pressed", String(Boolean(this._cooking)));
+      cookingButton.addEventListener("click", () => this._toggleCooking());
+      corner.append(cookingButton);
+      const editButton = cornerButton("mdi:pencil", "✎", t.edit);
       editButton.addEventListener("click", () => {
         this._editing = true;
         this._confirmingDelete = false;
@@ -689,7 +715,7 @@ class FoodPlanningRecipeDialog extends HTMLElement {
       });
       corner.append(editButton);
     }
-    const closeButton = el("button", { text: "✕", attrs: { "aria-label": t.close, title: t.close } });
+    const closeButton = cornerButton("mdi:close", "✕", t.close);
     closeButton.addEventListener("click", () => this.close());
     corner.append(closeButton);
 
@@ -795,17 +821,10 @@ class FoodPlanningRecipeDialog extends HTMLElement {
     );
     const cookedButton = el("button", { cls: "secondary", text: `✓ ${t.cooked}` });
     cookedButton.addEventListener("click", () => this._markCooked(cookedButton));
-    const cookingButton = el("button", {
-      cls: this._cooking ? "" : "secondary",
-      text: this._cooking ? t.cookingOn : t.cookingMode,
-      attrs: { "aria-pressed": String(Boolean(this._cooking)) },
-    });
-    cookingButton.addEventListener("click", () => this._toggleCooking());
     const actions = el(
       "div",
       { cls: "actions" },
       addButton,
-      cookingButton,
       cookedButton,
       el("span", { cls: "spacer" })
     );
