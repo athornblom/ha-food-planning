@@ -18,7 +18,11 @@ Anthropic with Claude Haiku 5.5), not in this integration.
 2. **TikTok:** the video's caption is read through TikTok's public oEmbed
    endpoint. Videos where the recipe is only spoken, with nothing written
    in the caption, can't be imported yet.
-3. The AI task returns a structured recipe (title, servings, ingredients,
+3. **Sites that block automated access** (some large recipe sites do) are
+   respected rather than worked around: the import fails with a message
+   saying so. Copy the recipe text and use `food_planning.import_recipe`
+   with `text` instead.
+4. The AI task returns a structured recipe (title, servings, ingredients,
    steps, notes), written in the configured language and with US units
    converted to metric.
 

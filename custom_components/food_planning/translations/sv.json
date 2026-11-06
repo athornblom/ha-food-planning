@@ -80,7 +80,8 @@
   "exceptions": {
     "not_loaded": { "message": "Food Planning är inte konfigurerad eller inte laddad." },
     "missing_input": { "message": "Klistra in en receptlänk eller text först." },
-    "fetch_failed": { "message": "Kunde inte hämta {url}." },
+    "site_refused": { "message": "{url} blockerar automatisk hämtning. Öppna receptet, kopiera texten och importera den som text i stället." },
+    "fetch_failed": { "message": "Kunde inte hämta {url} ({reason})." },
     "tiktok_no_caption": { "message": "TikTok-videon har ingen beskrivning att läsa ett recept från." },
     "no_recipe_found": { "message": "Inget recept hittades i innehållet." },
     "ai_task_missing": { "message": "Ingen AI-uppgiftsintegration finns. Lägg till en, till exempel Anthropic, först." },

@@ -9,7 +9,7 @@ import logging
 from typing import Any
 from urllib.parse import urlparse
 
-from aiohttp import ClientError, ClientTimeout
+from aiohttp import ClientError, ClientResponseError, ClientTimeout
 
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError, ServiceNotFound
@@ -23,13 +23,17 @@ FETCH_TIMEOUT = ClientTimeout(total=20)
 # Upper bound on page text sent to the model. Pages with a recipe in
 # structured data stay far below this; it only trims very long article pages.
 MAX_CONTENT_CHARS = 60_000
+# Identify honestly. Sites that block automated clients are respected, not
+# worked around; the user can paste the recipe text instead.
 HEADERS = {
     "User-Agent": (
-        "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
-        "(KHTML, like Gecko) Chrome/130.0 Safari/537.36"
+        "HomeAssistant food_planning "
+        "(+https://github.com/athornblom/ha-food-planning)"
     ),
     "Accept-Language": "sv,en;q=0.8",
 }
+# Responses that mean the site refuses automated clients.
+_REFUSED_STATUSES = frozenset({401, 402, 403, 429, 451})
 TIKTOK_OEMBED_URL = "https://www.tiktok.com/oembed"
 
 _SKIP_TAGS = frozenset(
@@ -231,7 +235,7 @@ async def _async_fetch_tiktok(hass: HomeAssistant, url: str) -> RecipeSource:
             data = await resp.json(content_type=None)
     except (ClientError, TimeoutError, ValueError) as err:
         _LOGGER.debug("TikTok oEmbed failed for %s: %s", url, err)
-        raise _error("fetch_failed", url=url) from err
+        raise _error("fetch_failed", url=url, reason=type(err).__name__) from err
 
     caption = (data.get("title") or "").strip()
     if not caption:
@@ -241,20 +245,30 @@ async def _async_fetch_tiktok(hass: HomeAssistant, url: str) -> RecipeSource:
     return RecipeSource(text=text, url=url, image_url=data.get("thumbnail_url"))
 
 
+async def _async_get_page(hass: HomeAssistant, url: str) -> tuple[str, str]:
+    """Download a page. Returns the final URL after redirects and the HTML."""
+    session = async_get_clientsession(hass)
+    try:
+        async with session.get(url, headers=HEADERS, timeout=FETCH_TIMEOUT) as resp:
+            if resp.status in _REFUSED_STATUSES:
+                _LOGGER.info("%s refused automated access (HTTP %s)", url, resp.status)
+                raise _error("site_refused", url=url)
+            resp.raise_for_status()
+            return str(resp.url), await resp.text(errors="replace")
+    except ClientResponseError as err:
+        reason = f"HTTP {err.status}"
+    except (ClientError, TimeoutError) as err:
+        reason = type(err).__name__
+    _LOGGER.warning("Could not fetch %s: %s", url, reason)
+    raise _error("fetch_failed", url=url, reason=reason)
+
+
 async def async_fetch_source(hass: HomeAssistant, url: str) -> RecipeSource:
     """Fetch a URL and return the text to extract a recipe from."""
     if _is_tiktok(url):
         return await _async_fetch_tiktok(hass, url)
 
-    session = async_get_clientsession(hass)
-    try:
-        async with session.get(url, headers=HEADERS, timeout=FETCH_TIMEOUT) as resp:
-            resp.raise_for_status()
-            final_url = str(resp.url)
-            html = await resp.text(errors="replace")
-    except (ClientError, TimeoutError) as err:
-        _LOGGER.debug("Fetching %s failed: %s", url, err)
-        raise _error("fetch_failed", url=url) from err
+    final_url, html = await _async_get_page(hass, url)
 
     # Short links (e.g. vm.tiktok.com) only reveal TikTok after redirects.
     if _is_tiktok(final_url):

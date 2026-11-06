@@ -80,7 +80,8 @@
   "exceptions": {
     "not_loaded": { "message": "Food Planning is not set up or not loaded." },
     "missing_input": { "message": "Paste a recipe link or text first." },
-    "fetch_failed": { "message": "Could not fetch {url}." },
+    "site_refused": { "message": "{url} blocks automated access. Open the recipe, copy its text and import it as text instead." },
+    "fetch_failed": { "message": "Could not fetch {url} ({reason})." },
     "tiktok_no_caption": { "message": "The TikTok video has no caption to read a recipe from." },
     "no_recipe_found": { "message": "No recipe was found in the content." },
     "ai_task_missing": { "message": "No AI task integration is available. Set up one, for example Anthropic, first." },
