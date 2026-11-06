@@ -58,7 +58,7 @@ ingredients, one per line; text under `### Gör så här` (or `Steps`,
 
 ## Installation
 
-### While the repository is private (manual)
+### Manual
 
 1. Copy `custom_components/food_planning/` into `/config/custom_components/`
    on the Home Assistant host (Samba share or the Studio Code Server app).
@@ -67,7 +67,7 @@ ingredients, one per line; text under `### Gör så här` (or `Steps`,
 
 Updating means copying the folder again and restarting.
 
-### From the Marketplace (once public)
+### From the Marketplace
 
 Settings → Marketplace → ⋮ → Custom repositories → add this repository as
 an **Integration**, install **Food Planning**, then add the integration as
