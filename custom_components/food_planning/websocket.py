@@ -58,6 +58,7 @@ def _recipe_json(store: FoodPlanningStore, recipe: Recipe) -> dict[str, Any]:
         "source_url": recipe.source_url,
         "image_url": image_url(recipe.image) if recipe.image else recipe.image_url,
         "created": recipe.created,
+        "categories": recipe.categories,
     }
 
 
@@ -79,7 +80,11 @@ def ws_subscribe_recipes(
     def send_recipes() -> None:
         connection.send_message(
             websocket_api.event_message(
-                msg["id"], {"recipes": [_recipe_json(store, r) for r in store.recipes]}
+                msg["id"],
+                {
+                    "recipes": [_recipe_json(store, r) for r in store.recipes],
+                    "categories": store.categories,
+                },
             )
         )
 
@@ -122,6 +127,7 @@ _OPTIONAL_TEXT = vol.Any(None, vol.All(str, vol.Strip))
         vol.Optional("steps"): _TEXT_LIST,
         vol.Optional("notes"): _OPTIONAL_TEXT,
         vol.Optional("source_url"): _OPTIONAL_TEXT,
+        vol.Optional("categories"): [str],
     }
 )
 @websocket_api.async_response

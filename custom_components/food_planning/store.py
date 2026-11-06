@@ -15,6 +15,32 @@ from .const import STORAGE_KEY, STORAGE_VERSION
 
 STATUS_NEEDS_ACTION = "needs_action"
 STATUS_COMPLETED = "completed"
+# Recipe categories a new install starts with; users add and remove their own.
+DEFAULT_CATEGORIES = {
+    "sv": [
+        "Frukost",
+        "Lunch",
+        "Middag",
+        "Förrätt",
+        "Efterrätt",
+        "Bakning",
+        "Mellanmål",
+        "Vegetariskt",
+        "Snabbt",
+    ],
+    "en": [
+        "Breakfast",
+        "Lunch",
+        "Dinner",
+        "Starter",
+        "Dessert",
+        "Baking",
+        "Snack",
+        "Vegetarian",
+        "Quick",
+    ],
+}
+
 # The two item lists: what to buy, and what's at home.
 SHOPPING = "shopping"
 PANTRY = "pantry"
@@ -51,6 +77,7 @@ class Recipe:
     # Set when the ingredients are added to the shopping list, cleared when
     # the recipe is marked as cooked. Drives "ready to cook".
     on_shopping_list: bool = False
+    categories: list[str] = field(default_factory=list)
     uid: str = field(default_factory=_new_uid)
     created: str = field(default_factory=lambda: dt_util.utcnow().isoformat())
 
@@ -85,6 +112,7 @@ class FoodPlanningStore:
             hass, STORAGE_VERSION, STORAGE_KEY, private=True
         )
         self.recipes: list[Recipe] = []
+        self.categories: list[str] = []
         self.lists: dict[str, list[ShoppingItem]] = {SHOPPING: [], PANTRY: []}
         self._listeners: list[Callable[[], None]] = []
 
@@ -99,10 +127,16 @@ class FoodPlanningStore:
         return self.lists[PANTRY]
 
     @classmethod
-    async def async_create(cls, hass: HomeAssistant) -> Self:
+    async def async_create(
+        cls, hass: HomeAssistant, default_language: str = "sv"
+    ) -> Self:
         """Create a store and load its saved data."""
         store = cls(hass)
         data = await store._store.async_load() or {}
+        store.categories = list(
+            data.get("categories")
+            or DEFAULT_CATEGORIES.get(default_language, DEFAULT_CATEGORIES["sv"])
+        )
         store.recipes = [_from_dict(Recipe, r) for r in data.get("recipes", [])]
         for list_name in LISTS:
             store.lists[list_name] = [
@@ -135,6 +169,7 @@ class FoodPlanningStore:
         await self._store.async_save(
             {
                 "recipes": [asdict(r) for r in self.recipes],
+                "categories": self.categories,
                 **{
                     name: [asdict(i) for i in items]
                     for name, items in self.lists.items()
@@ -186,6 +221,8 @@ class FoodPlanningStore:
         for key in ("title", "servings", "ingredients", "steps", "notes", "source_url"):
             if key in changes:
                 setattr(recipe, key, changes[key])
+        if "categories" in changes:
+            recipe.categories = self.normalize_categories(changes["categories"])
         if recipe.title != old_title:
             # Keep the recipe names under list items in step.
             for item in self.shopping + self.pantry:
@@ -195,6 +232,47 @@ class FoodPlanningStore:
                         for name in item.description.split(RECIPE_SEPARATOR)
                     )
         return recipe
+
+    def normalize_categories(self, names: list[str], *, add: bool = False) -> list[str]:
+        """Map names to known categories (case-insensitively), in list order.
+
+        Unknown names are added to the category list when add is True and
+        dropped otherwise (e.g. ones the AI made up).
+        """
+        known = {c.casefold(): c for c in self.categories}
+        result: list[str] = []
+        for name in names:
+            name = name.strip()
+            if not name:
+                continue
+            if (match := known.get(name.casefold())) is None:
+                if not add:
+                    continue
+                self.categories.append(name)
+                match = known[name.casefold()] = name
+            if match not in result:
+                result.append(match)
+        return result
+
+    def set_categories(self, names: list[str]) -> None:
+        """Replace the category list; removed ones are taken off recipes.
+
+        A name that only changes case keeps its recipes.
+        """
+        new: list[str] = []
+        for name in names:
+            if (name := name.strip()) and name.casefold() not in {
+                n.casefold() for n in new
+            }:
+                new.append(name)
+        by_folded = {n.casefold(): n for n in new}
+        for recipe in self.recipes:
+            recipe.categories = [
+                by_folded[c.casefold()]
+                for c in recipe.categories
+                if c.casefold() in by_folded
+            ]
+        self.categories = new
 
     def delete_recipe(self, uid: str) -> Recipe | None:
         """Delete a recipe and return it, or None if it didn't exist."""

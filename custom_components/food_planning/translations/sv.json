@@ -28,13 +28,15 @@
           "ai_task_entity": "AI-uppgiftsentitet",
           "language": "Receptspråk",
           "merge_shopping": "Slå ihop dubbletter i inköpslistan",
-          "update_pantry": "Uppdatera Hemma när något lagas"
+          "update_pantry": "Uppdatera Hemma när något lagas",
+          "categories": "Receptkategorier"
         },
         "data_description": {
           "ai_task_entity": "Lämna tomt för att använda den föredragna AI-uppgiftsentiteten under Inställningar > System > Allmänt.",
           "language": "Importerade recept skrivs på det här språket, t.ex. Swedish.",
           "merge_shopping": "När något läggs till slår AI:n ihop dubbletter, t.ex. \"2 msk olivolja\" och \"15 ml olivolja\" till \"3 msk olivolja\".",
-          "update_pantry": "När ett recept markeras som lagat drar AI:n av det som gick åt från listan Hemma."
+          "update_pantry": "När ett recept markeras som lagat drar AI:n av det som gick åt från listan Hemma.",
+          "categories": "En per rad. AI:n väljer bland dessa vid import. Tar du bort en försvinner den från recepten."
         }
       }
     }

@@ -45,6 +45,11 @@ _BLOCK_TAGS = frozenset(
 )
 
 RECIPE_STRUCTURE: dict[str, Any] = {
+    "categories": {
+        "description": "Categories from the given list that fit the recipe.",
+        "required": False,
+        "selector": {"text": {"multiple": True}},
+    },
     "is_recipe": {
         "description": "True if the content contains a recipe, otherwise false.",
         "required": True,
@@ -85,6 +90,8 @@ INSTRUCTIONS = """Extract the recipe from the content below.
 - List each ingredient as its own item, amount first (for example \
 "2 dl grädde"). Do not include section headings as ingredients.
 - Keep the steps faithful to the source; do not invent quantities or steps.
+- Pick the categories that fit the dish from this list only: {categories}. \
+Usually one or two; none if nothing fits.
 - If the content does not contain a recipe, set is_recipe to false and \
 leave the other fields empty.
 
@@ -116,6 +123,7 @@ class ExtractedRecipe:
     steps: list[str]
     servings: str | None
     notes: str | None
+    categories: list[str]
 
 
 def _error(key: str, **placeholders: str) -> HomeAssistantError:
@@ -366,6 +374,7 @@ async def async_extract_recipe(
     *,
     language: str,
     ai_task_entity: str | None,
+    categories: list[str] | None = None,
 ) -> ExtractedRecipe:
     """Ask the configured AI task entity to turn source text into a recipe."""
     content = source.text
@@ -383,6 +392,7 @@ async def async_extract_recipe(
         task_name="Food Planning recipe import",
         instructions=INSTRUCTIONS.format(
             language=language,
+            categories=", ".join(categories or []) or "(none)",
             source=source.url or "text pasted by the user",
             content=content,
         ),
@@ -403,4 +413,5 @@ async def async_extract_recipe(
         steps=_as_text_list(data.get("steps")),
         servings=_as_optional_text(data.get("servings")),
         notes=_as_optional_text(data.get("notes")),
+        categories=_as_text_list(data.get("categories")),
     )

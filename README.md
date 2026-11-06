@@ -66,6 +66,11 @@ type: custom:food-planning-card
   delete the recipe (asks for confirmation).
 - The ✎ button edits a recipe: name, servings, ingredients and steps (one
   per line), tips and source link.
+- **Categories** (Middag, Efterrätt, Bakning, …): the AI picks fitting
+  ones from your list when importing; change them with ✎, and filter by
+  category in the card. Manage the list itself on the settings page
+  (Settings → Devices & services → Food Planning → Configure), one per
+  line. It starts with a default set.
 - Search by recipe name or ingredient, and filter by status:
   - **🛒 N kvar att handla:** some of the recipe's items are still unticked
     on the shopping list.
@@ -145,6 +150,8 @@ published.
 - **Merge duplicate shopping items:** on by default, see above (applies to
   At home too).
 - **Update At home when cooked:** on by default, see above.
+- **Recipe categories:** one per line. Removing one also takes it off the
+  recipes that had it.
 
 All can be changed later under the integration's **Configure** button.
 

@@ -15,6 +15,8 @@ CONF_MERGE_SHOPPING: Final = "merge_shopping"
 DEFAULT_LANGUAGE: Final = "Swedish"
 DEFAULT_MERGE_SHOPPING: Final = True
 CONF_UPDATE_PANTRY: Final = "update_pantry"
+# Shown on the settings page, but stored with the recipes, not as an option.
+CONF_CATEGORIES: Final = "categories"
 DEFAULT_UPDATE_PANTRY: Final = True
 
 SERVICE_IMPORT_RECIPE: Final = "import_recipe"

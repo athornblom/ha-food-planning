@@ -12,7 +12,15 @@ from homeassistant.helpers import config_validation as cv, entity_registry as er
 from homeassistant.helpers.typing import ConfigType
 from homeassistant.loader import async_get_integration
 
-from .const import CARD_FILENAME, DOMAIN, FRONTEND_URL, IMAGES_URL, REMOVED_ENTITIES
+from .const import (
+    CARD_FILENAME,
+    CONF_LANGUAGE,
+    DEFAULT_LANGUAGE,
+    DOMAIN,
+    FRONTEND_URL,
+    IMAGES_URL,
+    REMOVED_ENTITIES,
+)
 from .data import FoodPlanningConfigEntry, FoodPlanningData
 from .images import async_delete_all_images, async_repair_images, ensure_images_dir
 from .merge import ListMerger
@@ -52,7 +60,10 @@ async def async_setup_entry(
 ) -> bool:
     """Load stored data and set up the shopping list and pantry."""
     _remove_old_entities(hass, entry)
-    store = await FoodPlanningStore.async_create(hass)
+    language = entry.options.get(CONF_LANGUAGE, DEFAULT_LANGUAGE).casefold()
+    store = await FoodPlanningStore.async_create(
+        hass, "sv" if language in ("swedish", "svenska", "sv") else "en"
+    )
     mergers = {name: ListMerger(hass, entry, name) for name in LISTS}
     for merger in mergers.values():
         entry.async_on_unload(merger.async_cancel)

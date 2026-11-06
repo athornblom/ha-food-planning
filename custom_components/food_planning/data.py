@@ -49,6 +49,7 @@ async def async_import_recipe(
         source,
         language=entry.options.get(CONF_LANGUAGE, DEFAULT_LANGUAGE),
         ai_task_entity=entry.options.get(CONF_AI_TASK_ENTITY),
+        categories=entry.runtime_data.store.categories,
     )
     recipe = Recipe(
         title=extracted.title,
@@ -58,6 +59,7 @@ async def async_import_recipe(
         notes=extracted.notes,
         source_url=source.url,
         image_url=source.image_url,
+        categories=entry.runtime_data.store.normalize_categories(extracted.categories),
     )
     recipe.image = await async_save_image(hass, recipe.uid, source.image_url)
 

@@ -8,6 +8,7 @@ import voluptuous as vol
 
 from homeassistant.config_entries import (
     ConfigEntry,
+    ConfigEntryState,
     ConfigFlow,
     ConfigFlowResult,
     OptionsFlow,
@@ -18,10 +19,12 @@ from homeassistant.helpers.selector import (
     EntitySelector,
     EntitySelectorConfig,
     TextSelector,
+    TextSelectorConfig,
 )
 
 from .const import (
     CONF_AI_TASK_ENTITY,
+    CONF_CATEGORIES,
     CONF_LANGUAGE,
     CONF_MERGE_SHOPPING,
     CONF_UPDATE_PANTRY,
@@ -72,17 +75,39 @@ class FoodPlanningConfigFlow(ConfigFlow, domain=DOMAIN):
 
 
 class FoodPlanningOptionsFlow(OptionsFlow):
-    """Change the AI task entity or language later."""
+    """Settings: AI task entity, language, AI features and recipe categories."""
 
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """Show the options form. Options are read at import time, no reload."""
+        """Show the settings. Options are read when used, so no reload.
+
+        The recipe categories live with the recipes (in the integration's
+        storage), not in the options, so they're only shown while loaded.
+        """
+        store = (
+            self.config_entry.runtime_data.store
+            if self.config_entry.state is ConfigEntryState.LOADED
+            else None
+        )
         if user_input is not None:
+            if store is not None and CONF_CATEGORIES in user_input:
+                store.set_categories(user_input.pop(CONF_CATEGORIES).splitlines())
+                await store.async_save()
             return self.async_create_entry(data=user_input)
+
+        schema = OPTIONS_SCHEMA
+        suggested = dict(self.config_entry.options)
+        if store is not None:
+            schema = OPTIONS_SCHEMA.extend(
+                {
+                    vol.Optional(CONF_CATEGORIES): TextSelector(
+                        TextSelectorConfig(multiline=True)
+                    )
+                }
+            )
+            suggested[CONF_CATEGORIES] = "\n".join(store.categories)
         return self.async_show_form(
             step_id="init",
-            data_schema=self.add_suggested_values_to_schema(
-                OPTIONS_SCHEMA, self.config_entry.options
-            ),
+            data_schema=self.add_suggested_values_to_schema(schema, suggested),
         )

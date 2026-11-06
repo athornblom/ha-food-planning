@@ -23,6 +23,9 @@ const STRINGS = {
     filterAll: "Alla",
     filterReady: "Redo att laga",
     filterShopping: "Att handla",
+    allCategories: "Alla kategorier",
+    fieldCategories: "Kategorier",
+    categoriesHint: "Kategorierna hanteras under Inställningar → Enheter och tjänster → Food Planning → Konfigurera.",
     toBuy: (n) => `🛒 ${n} kvar att handla`,
     ready: "✓ Redo att laga",
     readyLong: "Allt är inhandlat. Dags att laga!",
@@ -64,6 +67,9 @@ const STRINGS = {
     filterAll: "All",
     filterReady: "Ready to cook",
     filterShopping: "To buy",
+    allCategories: "All categories",
+    fieldCategories: "Categories",
+    categoriesHint: "Manage categories under Settings → Devices & services → Food Planning → Configure.",
     toBuy: (n) => `🛒 ${n} left to buy`,
     ready: "✓ Ready to cook",
     readyLong: "Everything is bought. Time to cook!",
@@ -179,6 +185,8 @@ class FoodPlanningCard extends HTMLElement {
     this._recipes = null;
     this._search = "";
     this._filter = "all";
+    this._category = null;
+    this._categories = [];
     this._unsub = null;
     this._subscribing = false;
   }
@@ -225,8 +233,11 @@ class FoodPlanningCard extends HTMLElement {
       this._unsub = await this._hass.connection.subscribeMessage(
         (msg) => {
           this._recipes = msg.recipes;
+          this._categories = msg.categories || [];
+          if (this._category && !this._categories.includes(this._category)) this._category = null;
+          this._renderCategoryChips();
           this._renderGrid();
-          if (this._dialog) this._dialog.update(this._recipes);
+          if (this._dialog) this._dialog.update(this._recipes, this._categories);
         },
         { type: `${DOMAIN}/recipes/subscribe` }
       );
@@ -256,6 +267,8 @@ class FoodPlanningCard extends HTMLElement {
         color: var(--primary-text-color); border: 1px solid var(--divider-color);
       }
       .chip.active { background: var(--primary-color); color: var(--text-primary-color, #fff); border-color: transparent; }
+      .categories { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+      .categories:empty { display: none; }
       .grid {
         display: grid; gap: 12px; margin-top: 16px;
         grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
@@ -305,6 +318,7 @@ class FoodPlanningCard extends HTMLElement {
       });
       this._chips.append(chip);
     }
+    this._categoryChips = el("div", { cls: "categories" });
     this._grid = el("div", { cls: "grid" });
     this._empty = el("p", { cls: "empty", attrs: { hidden: "" } });
 
@@ -315,6 +329,7 @@ class FoodPlanningCard extends HTMLElement {
       el("div", { cls: "add" }, this._input, this._addButton),
       this._status,
       el("div", { cls: "tools" }, this._searchInput, this._chips),
+      this._categoryChips,
       this._grid,
       this._empty
     );
@@ -353,6 +368,30 @@ class FoodPlanningCard extends HTMLElement {
     }
   }
 
+  _renderCategoryChips() {
+    if (!this._categoryChips) return;
+    const used = new Set((this._recipes || []).flatMap((r) => r.categories || []));
+    const shown = this._categories.filter((c) => used.has(c));
+    if (!shown.length) {
+      this._categoryChips.replaceChildren();
+      return;
+    }
+    const chip = (label, value) => {
+      const node = el("button", { cls: "chip", text: label });
+      node.classList.toggle("active", this._category === value);
+      node.addEventListener("click", () => {
+        this._category = value;
+        this._renderCategoryChips();
+        this._renderGrid();
+      });
+      return node;
+    };
+    this._categoryChips.replaceChildren(
+      chip(this._t.allCategories, null),
+      ...shown.map((c) => chip(c, c))
+    );
+  }
+
   _renderGrid() {
     if (!this._grid) return;
     const t = this._t;
@@ -362,6 +401,7 @@ class FoodPlanningCard extends HTMLElement {
     }
     const shown = recipes.filter((r) => {
       if (this._filter !== "all" && r.status !== this._filter) return false;
+      if (this._category && !(r.categories || []).includes(this._category)) return false;
       if (!this._search) return true;
       return (
         r.title.toLowerCase().includes(this._search) ||
@@ -387,7 +427,10 @@ class FoodPlanningCard extends HTMLElement {
     if (recipe.status === "shopping") tile.append(el("span", { cls: "badge", text: t.toBuy(recipe.to_buy) }));
     tile.append(
       el("span", { cls: "name", text: recipe.title }),
-      el("span", { cls: "meta", text: recipe.servings || "" })
+      el("span", {
+        cls: "meta",
+        text: [recipe.servings, ...(recipe.categories || [])].filter(Boolean).join(" · "),
+      })
     );
     tile.addEventListener("click", () => this._open(recipe.uid));
     return tile;
@@ -401,6 +444,7 @@ class FoodPlanningCard extends HTMLElement {
       t: this._t,
       uid,
       recipes: this._recipes || [],
+      categories: this._categories,
       onClose: () => {
         if (this._dialog === dialog) this._dialog = null;
       },
@@ -434,12 +478,12 @@ class FoodPlanningRecipeDialog extends HTMLElement {
     };
   }
 
-  setup({ hass, t, uid, recipes, onClose }) {
+  setup({ hass, t, uid, recipes, categories, onClose }) {
     this._hass = hass;
     this._t = t;
     this._uid = uid;
     this._onClose = onClose;
-    this.update(recipes);
+    this.update(recipes, categories);
   }
 
   connectedCallback() {
@@ -455,7 +499,8 @@ class FoodPlanningRecipeDialog extends HTMLElement {
     if (this._onClose) this._onClose();
   }
 
-  update(recipes) {
+  update(recipes, categories) {
+    if (categories) this._categories = categories;
     const recipe = recipes.find((r) => r.uid === this._uid);
     if (!recipe) {
       this.close();
@@ -546,6 +591,14 @@ class FoodPlanningRecipeDialog extends HTMLElement {
       form label > input, form label > textarea { margin-top: 4px; }
       form textarea { resize: vertical; line-height: 1.45; }
       .row { display: grid; grid-template-columns: 2fr 1fr; gap: 12px; }
+      .tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+      .pick { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+      .pick button {
+        padding: 6px 12px; font-size: 13px; background: transparent;
+        color: var(--primary-text-color); border: 1px solid var(--divider-color);
+      }
+      .pick button.on { background: var(--primary-color); color: var(--text-primary-color, #fff); border-color: transparent; }
+      .hint { font-size: 12px; color: var(--secondary-text-color); margin: 6px 0 0; }
       @media (max-width: 640px) { .row { grid-template-columns: 1fr; } }
     `,
     });
@@ -660,9 +713,14 @@ class FoodPlanningRecipeDialog extends HTMLElement {
     }
     this._status = el("p", { cls: "status", attrs: { hidden: "" } });
 
+    const tags = (recipe.categories || []).length
+      ? el("div", { cls: "tags" }, ...recipe.categories.map((c) => el("span", { cls: "badge", text: c })))
+      : null;
+
     this._shell(
       el("h2", { text: recipe.title }),
       meta,
+      tags,
       state,
       el("div", { cls: "columns" }, left, right),
       actions,
@@ -691,6 +749,25 @@ class FoodPlanningRecipeDialog extends HTMLElement {
     const steps = area(recipe.steps.join("\n"), Math.min(14, recipe.steps.length + 3));
     const notes = area(recipe.notes, 3);
     const source = input(recipe.source_url);
+    const selected = new Set(recipe.categories || []);
+    const picker = el("div", { cls: "pick" });
+    for (const name of this._categories || []) {
+      const b = el("button", { text: name, attrs: { type: "button" } });
+      b.classList.toggle("on", selected.has(name));
+      b.addEventListener("click", () => {
+        if (selected.has(name)) selected.delete(name);
+        else selected.add(name);
+        b.classList.toggle("on", selected.has(name));
+      });
+      picker.append(b);
+    }
+    const categoriesField = el(
+      "div",
+      {},
+      el("label", { text: t.fieldCategories }),
+      picker,
+      el("p", { cls: "hint", text: t.categoriesHint })
+    );
 
     const save = el("button", { text: t.save, attrs: { type: "submit" } });
     const cancel = el("button", { cls: "secondary", text: t.cancel, attrs: { type: "button" } });
@@ -705,6 +782,7 @@ class FoodPlanningRecipeDialog extends HTMLElement {
       "form",
       {},
       el("div", { cls: "row" }, field(t.fieldTitle, title), field(t.fieldServings, servings)),
+      categoriesField,
       field(t.fieldIngredients, ingredients),
       field(t.fieldSteps, steps),
       field(t.fieldNotes, notes),
@@ -729,6 +807,7 @@ class FoodPlanningRecipeDialog extends HTMLElement {
           steps: lines(steps.value),
           notes: notes.value.trim() || null,
           source_url: source.value.trim() || null,
+          categories: (this._categories || []).filter((c) => selected.has(c)),
         });
         this._editing = false;
         this._setStatus("");
