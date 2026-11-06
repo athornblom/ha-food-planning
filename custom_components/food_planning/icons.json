@@ -3,6 +3,9 @@
     "todo": {
       "shopping_list": {
         "default": "mdi:cart"
+      },
+      "pantry": {
+        "default": "mdi:fridge-outline"
       }
     }
   },
@@ -12,6 +15,9 @@
     },
     "add_recipe_to_shopping_list": {
       "service": "mdi:cart-plus"
+    },
+    "move_bought_to_pantry": {
+      "service": "mdi:home-import-outline"
     }
   }
 }

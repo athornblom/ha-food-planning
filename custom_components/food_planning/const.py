@@ -14,9 +14,12 @@ CONF_LANGUAGE: Final = "language"
 CONF_MERGE_SHOPPING: Final = "merge_shopping"
 DEFAULT_LANGUAGE: Final = "Swedish"
 DEFAULT_MERGE_SHOPPING: Final = True
+CONF_UPDATE_PANTRY: Final = "update_pantry"
+DEFAULT_UPDATE_PANTRY: Final = True
 
 SERVICE_IMPORT_RECIPE: Final = "import_recipe"
 SERVICE_ADD_TO_SHOPPING_LIST: Final = "add_recipe_to_shopping_list"
+SERVICE_MOVE_BOUGHT_TO_PANTRY: Final = "move_bought_to_pantry"
 
 ATTR_URL: Final = "url"
 ATTR_TEXT: Final = "text"

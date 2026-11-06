@@ -1,4 +1,4 @@
-"""The food shopping list."""
+"""To-do lists: the food shopping list and what's at home (pantry)."""
 
 from __future__ import annotations
 
@@ -15,7 +15,13 @@ from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from .const import DOMAIN
 from .data import FoodPlanningConfigEntry
 from .entity import FoodPlanningEntity
-from .store import STATUS_COMPLETED, STATUS_NEEDS_ACTION, ShoppingItem
+from .store import (
+    PANTRY,
+    SHOPPING,
+    STATUS_COMPLETED,
+    STATUS_NEEDS_ACTION,
+    ShoppingItem,
+)
 
 PARALLEL_UPDATES = 0
 
@@ -25,8 +31,10 @@ async def async_setup_entry(
     entry: FoodPlanningConfigEntry,
     async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
-    """Set up the shopping list."""
-    async_add_entities([ShoppingList(entry)])
+    """Set up the shopping list and the pantry."""
+    async_add_entities(
+        [FoodList(entry, "shopping_list", SHOPPING), FoodList(entry, "pantry", PANTRY)]
+    )
 
 
 def _item_not_found(uid: str) -> ServiceValidationError:
@@ -37,8 +45,12 @@ def _item_not_found(uid: str) -> ServiceValidationError:
     )
 
 
-class ShoppingList(FoodPlanningEntity, TodoListEntity):
-    """The food shopping list. Works with the to-do card and Assist."""
+class FoodList(FoodPlanningEntity, TodoListEntity):
+    """A list of food items. Works with the to-do card and Assist.
+
+    On the shopping list, ticking an item means bought; in the pantry, it
+    means used up. New items are checked for duplicates by the AI.
+    """
 
     _attr_supported_features = (
         TodoListEntityFeature.CREATE_TODO_ITEM
@@ -48,13 +60,20 @@ class ShoppingList(FoodPlanningEntity, TodoListEntity):
         | TodoListEntityFeature.SET_DESCRIPTION_ON_ITEM
     )
 
-    def __init__(self, entry: FoodPlanningConfigEntry) -> None:
+    def __init__(
+        self, entry: FoodPlanningConfigEntry, key: str, list_name: str
+    ) -> None:
         """Initialize the list."""
-        super().__init__(entry, "todo", "shopping_list")
+        super().__init__(entry, "todo", key)
+        self._list_name = list_name
+
+    @property
+    def _items(self) -> list[ShoppingItem]:
+        return self._data.store.lists[self._list_name]
 
     @property
     def todo_items(self) -> list[TodoItem]:
-        """Return the shopping items."""
+        """Return the items."""
         return [
             TodoItem(
                 uid=item.uid,
@@ -66,20 +85,20 @@ class ShoppingList(FoodPlanningEntity, TodoListEntity):
                 ),
                 description=item.description,
             )
-            for item in self._data.store.shopping
+            for item in self._items
         ]
 
     async def async_create_todo_item(self, item: TodoItem) -> None:
         """Add an item by hand or by voice, then merge any duplicate."""
         new = ShoppingItem(summary=item.summary or "", description=item.description)
-        self._data.store.shopping.append(new)
+        self._items.append(new)
         await self._data.store.async_save()
-        self._data.merger.async_schedule([new.uid])
+        self._data.mergers[self._list_name].async_schedule([new.uid])
 
     async def async_update_todo_item(self, item: TodoItem) -> None:
         """Rename, tick off or describe an item."""
         store = self._data.store
-        existing = store.get_shopping_item(item.uid or "")
+        existing = store.get_item(self._list_name, item.uid or "")
         if existing is None:
             raise _item_not_found(item.uid or "")
         if item.summary is not None:
@@ -95,13 +114,13 @@ class ShoppingList(FoodPlanningEntity, TodoListEntity):
 
     async def async_delete_todo_items(self, uids: list[str]) -> None:
         """Delete items, e.g. when clearing ticked-off items."""
-        self._data.store.delete_shopping_items(set(uids))
+        self._data.store.delete_items(self._list_name, set(uids))
         await self._data.store.async_save()
 
     async def async_move_todo_item(
         self, uid: str, previous_uid: str | None = None
     ) -> None:
         """Reorder an item."""
-        if not self._data.store.move_shopping_item(uid, previous_uid):
+        if not self._data.store.move_item(self._list_name, uid, previous_uid):
             raise _item_not_found(uid)
         await self._data.store.async_save()

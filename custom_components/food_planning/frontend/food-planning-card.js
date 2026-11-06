@@ -27,6 +27,7 @@ const STRINGS = {
     ready: "✓ Redo att laga",
     readyLong: "Allt är inhandlat. Dags att laga!",
     cooked: "Lagad",
+    cookedDone: "Markerad som lagad. Hemma uppdateras med det som gick åt.",
     ingredients: "Ingredienser",
     steps: "Gör så här",
     notes: "Tips",
@@ -67,6 +68,7 @@ const STRINGS = {
     ready: "✓ Ready to cook",
     readyLong: "Everything is bought. Time to cook!",
     cooked: "Cooked",
+    cookedDone: "Marked as cooked. At home is being updated with what was used.",
     ingredients: "Ingredients",
     steps: "Steps",
     notes: "Tips",
@@ -763,6 +765,7 @@ class FoodPlanningRecipeDialog extends HTMLElement {
     button.disabled = true;
     try {
       await this._hass.callWS({ type: `${DOMAIN}/recipes/cooked`, uid: this._uid });
+      this._setStatus(this._t.cookedDone);
     } catch (err) {
       this._setStatus(errorMessage(err), true);
       button.disabled = false;

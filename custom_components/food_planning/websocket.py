@@ -10,9 +10,10 @@ from homeassistant.components import websocket_api
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant, callback
 
-from .const import DOMAIN
+from .const import CONF_UPDATE_PANTRY, DEFAULT_UPDATE_PANTRY, DOMAIN
 from .data import FoodPlanningConfigEntry, async_delete_recipe
 from .images import image_url
+from .pantry import async_consume_recipe
 from .store import FoodPlanningStore, Recipe
 
 
@@ -156,7 +157,7 @@ async def ws_mark_cooked(
     connection: websocket_api.ActiveConnection,
     msg: dict[str, Any],
 ) -> None:
-    """Clear a recipe's "ready to cook" status after it has been cooked."""
+    """Mark a recipe as cooked: clear "ready to cook", update the pantry."""
     entry = _loaded_entry(hass)
     if entry is None:
         connection.send_error(msg["id"], "not_loaded", "Food Planning is not loaded")
@@ -169,3 +170,9 @@ async def ws_mark_cooked(
     recipe.on_shopping_list = False
     await store.async_save()
     connection.send_result(msg["id"])
+    if entry.options.get(CONF_UPDATE_PANTRY, DEFAULT_UPDATE_PANTRY):
+        entry.async_create_background_task(
+            hass,
+            async_consume_recipe(hass, entry, recipe),
+            "food_planning pantry update",
+        )

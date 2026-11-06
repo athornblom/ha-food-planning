@@ -68,11 +68,28 @@ more items are changed, so an item without a duplicate is never rewritten,
 and an item you edited or ticked off in the meantime is left alone. Turn it
 off under the integration's **Configure** button.
 
+### At home (pantry)
+
+`todo.food_planning_pantry` ("Hemma" / "At home") lists the food you have.
+Edit it like any to-do list; ticking an item off means it's used up.
+
+- **Move bought items home:** `food_planning.move_bought_to_pantry` moves
+  every ticked-off item from the shopping list to At home (put it on a
+  dashboard button). Duplicates are then merged by the AI, as on the
+  shopping list.
+- **Cooking updates it:** pressing **Lagad** on a recipe sends At home and
+  the recipe's ingredients to the AI, which subtracts what was used
+  ("500 g pasta" → "100 g pasta") and removes what's used up. Items it
+  doesn't mention, and items you changed meanwhile, are left alone. Turn
+  it off under **Configure**.
+
 ### Actions
 
 - `food_planning.import_recipe`: `url` **or** `text`, plus optional
   `add_to_shopping_list`. Can return the recipe as a response.
 - `food_planning.add_recipe_to_shopping_list`: `recipe` (title or ID).
+- `food_planning.move_bought_to_pantry`: move ticked-off shopping items to
+  At home.
 
 ## Requirements
 
@@ -106,7 +123,9 @@ published.
   in Settings → System → General.
 - **Recipe language:** the language recipes are written in (default
   `Swedish`).
-- **Merge duplicate shopping items:** on by default, see above.
+- **Merge duplicate shopping items:** on by default, see above (applies to
+  At home too).
+- **Update At home when cooked:** on by default, see above.
 
 All can be changed later under the integration's **Configure** button.
 
@@ -130,5 +149,5 @@ All can be changed later under the integration's **Configure** button.
 
 ## Roadmap
 
-- Suggesting recipes from what's already at home.
+- Suggesting recipes from what's at home.
 - Importing spoken-only videos via transcription.

@@ -9,12 +9,14 @@
         "data": {
           "ai_task_entity": "AI task entity",
           "language": "Recipe language",
-          "merge_shopping": "Merge duplicate shopping items"
+          "merge_shopping": "Merge duplicate shopping items",
+          "update_pantry": "Update At home when cooked"
         },
         "data_description": {
           "ai_task_entity": "Leave empty to use the preferred AI task entity from Settings > System > General.",
           "language": "Imported recipes are written in this language, e.g. Swedish.",
-          "merge_shopping": "When items are added, the AI merges duplicates, e.g. \"2 msk olivolja\" and \"15 ml olivolja\" into \"3 msk olivolja\"."
+          "merge_shopping": "When items are added, the AI merges duplicates, e.g. \"2 msk olivolja\" and \"15 ml olivolja\" into \"3 msk olivolja\".",
+          "update_pantry": "When a recipe is marked as cooked, the AI subtracts what it used from the At home list."
         }
       }
     }
@@ -25,12 +27,14 @@
         "data": {
           "ai_task_entity": "AI task entity",
           "language": "Recipe language",
-          "merge_shopping": "Merge duplicate shopping items"
+          "merge_shopping": "Merge duplicate shopping items",
+          "update_pantry": "Update At home when cooked"
         },
         "data_description": {
           "ai_task_entity": "Leave empty to use the preferred AI task entity from Settings > System > General.",
           "language": "Imported recipes are written in this language, e.g. Swedish.",
-          "merge_shopping": "When items are added, the AI merges duplicates, e.g. \"2 msk olivolja\" and \"15 ml olivolja\" into \"3 msk olivolja\"."
+          "merge_shopping": "When items are added, the AI merges duplicates, e.g. \"2 msk olivolja\" and \"15 ml olivolja\" into \"3 msk olivolja\".",
+          "update_pantry": "When a recipe is marked as cooked, the AI subtracts what it used from the At home list."
         }
       }
     }
@@ -39,6 +43,9 @@
     "todo": {
       "shopping_list": {
         "name": "Food shopping list"
+      },
+      "pantry": {
+        "name": "At home"
       }
     }
   },
@@ -70,6 +77,10 @@
           "description": "Recipe title or ID."
         }
       }
+    },
+    "move_bought_to_pantry": {
+      "name": "Move bought items home",
+      "description": "Moves ticked-off items from the shopping list to the At home list. Duplicates are then merged by the AI."
     }
   },
   "exceptions": {

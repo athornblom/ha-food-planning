@@ -15,6 +15,10 @@ from .const import STORAGE_KEY, STORAGE_VERSION
 
 STATUS_NEEDS_ACTION = "needs_action"
 STATUS_COMPLETED = "completed"
+# The two item lists: what to buy, and what's at home.
+SHOPPING = "shopping"
+PANTRY = "pantry"
+LISTS = (SHOPPING, PANTRY)
 # Joins the recipe names shown under a shopping item.
 RECIPE_SEPARATOR = " · "
 
@@ -73,7 +77,7 @@ def _shopping_item_from_dict(data: dict[str, Any]) -> ShoppingItem:
 
 
 class FoodPlanningStore:
-    """Holds recipes and shopping items and persists them to .storage."""
+    """Holds recipes, the shopping list and the pantry; persists to .storage."""
 
     def __init__(self, hass: HomeAssistant) -> None:
         """Initialize the store."""
@@ -81,8 +85,18 @@ class FoodPlanningStore:
             hass, STORAGE_VERSION, STORAGE_KEY, private=True
         )
         self.recipes: list[Recipe] = []
-        self.shopping: list[ShoppingItem] = []
+        self.lists: dict[str, list[ShoppingItem]] = {SHOPPING: [], PANTRY: []}
         self._listeners: list[Callable[[], None]] = []
+
+    @property
+    def shopping(self) -> list[ShoppingItem]:
+        """The shopping list."""
+        return self.lists[SHOPPING]
+
+    @property
+    def pantry(self) -> list[ShoppingItem]:
+        """What's at home."""
+        return self.lists[PANTRY]
 
     @classmethod
     async def async_create(cls, hass: HomeAssistant) -> Self:
@@ -90,7 +104,10 @@ class FoodPlanningStore:
         store = cls(hass)
         data = await store._store.async_load() or {}
         store.recipes = [_from_dict(Recipe, r) for r in data.get("recipes", [])]
-        store.shopping = [_shopping_item_from_dict(s) for s in data.get("shopping", [])]
+        for list_name in LISTS:
+            store.lists[list_name] = [
+                _shopping_item_from_dict(i) for i in data.get(list_name, [])
+            ]
         store._link_items_by_name()
         return store
 
@@ -101,12 +118,14 @@ class FoodPlanningStore:
         after duplicates from several recipes were merged into them.
         """
         by_title = {r.title: r for r in self.recipes}
-        for item in self.shopping:
+        for item in self.shopping + self.pantry:
             for name in (item.description or "").split(RECIPE_SEPARATOR):
                 recipe = by_title.get(name.strip())
                 if recipe and recipe.uid not in item.recipe_uids:
                     item.recipe_uids.append(recipe.uid)
-        linked = {uid for item in self.shopping for uid in item.recipe_uids}
+        linked = {
+            uid for item in self.shopping + self.pantry for uid in item.recipe_uids
+        }
         for recipe in self.recipes:
             if recipe.uid in linked:
                 recipe.on_shopping_list = True
@@ -116,7 +135,10 @@ class FoodPlanningStore:
         await self._store.async_save(
             {
                 "recipes": [asdict(r) for r in self.recipes],
-                "shopping": [asdict(s) for s in self.shopping],
+                **{
+                    name: [asdict(i) for i in items]
+                    for name, items in self.lists.items()
+                },
             }
         )
         for listener in list(self._listeners):
@@ -165,8 +187,8 @@ class FoodPlanningStore:
             if key in changes:
                 setattr(recipe, key, changes[key])
         if recipe.title != old_title:
-            # Keep the recipe names under shopping items in step.
-            for item in self.shopping:
+            # Keep the recipe names under list items in step.
+            for item in self.shopping + self.pantry:
                 if recipe.uid in item.recipe_uids and item.description:
                     item.description = RECIPE_SEPARATOR.join(
                         recipe.title if name == old_title else name
@@ -181,15 +203,38 @@ class FoodPlanningStore:
             self.recipes.remove(recipe)
         return recipe
 
-    # Shopping list
+    # Shopping list and pantry
 
-    def get_shopping_item(self, uid: str) -> ShoppingItem | None:
-        """Return the shopping item with this uid."""
-        return next((s for s in self.shopping if s.uid == uid), None)
+    def get_item(self, list_name: str, uid: str) -> ShoppingItem | None:
+        """Return the item with this uid from a list."""
+        return next((i for i in self.lists[list_name] if i.uid == uid), None)
 
-    def open_shopping_items(self) -> list[ShoppingItem]:
-        """Return items that haven't been ticked off."""
-        return [s for s in self.shopping if s.status == STATUS_NEEDS_ACTION]
+    def open_items(self, list_name: str) -> list[ShoppingItem]:
+        """Return a list's items that haven't been ticked off."""
+        return [i for i in self.lists[list_name] if i.status == STATUS_NEEDS_ACTION]
+
+    def delete_items(self, list_name: str, uids: set[str]) -> None:
+        """Delete items from a list."""
+        self.lists[list_name][:] = [
+            i for i in self.lists[list_name] if i.uid not in uids
+        ]
+
+    def move_item(self, list_name: str, uid: str, previous_uid: str | None) -> bool:
+        """Move an item to just after previous_uid, or first if None.
+
+        Returns False if the item does not exist.
+        """
+        items = self.lists[list_name]
+        item = self.get_item(list_name, uid)
+        if item is None:
+            return False
+        items.remove(item)
+        index = next(
+            (i + 1 for i, other in enumerate(items) if other.uid == previous_uid),
+            0 if previous_uid is None else len(items),
+        )
+        items.insert(index, item)
+        return True
 
     def add_recipe_to_shopping(self, recipe: Recipe) -> list[ShoppingItem]:
         """Add a recipe's ingredients, skipping exact copies of open items.
@@ -200,7 +245,7 @@ class FoodPlanningStore:
         recipe.on_shopping_list = True
         added: list[ShoppingItem] = []
         open_items: dict[str, ShoppingItem] = {
-            s.summary.casefold(): s for s in self.open_shopping_items()
+            s.summary.casefold(): s for s in self.open_items(SHOPPING)
         }
         for ingredient in recipe.ingredients:
             if existing := open_items.get(ingredient.casefold()):
@@ -230,26 +275,14 @@ class FoodPlanningStore:
                 bought += 1
         return open_count, bought
 
-    def delete_shopping_items(self, uids: set[str]) -> None:
-        """Delete shopping items."""
-        self.shopping = [s for s in self.shopping if s.uid not in uids]
+    def move_bought_to_pantry(self) -> list[ShoppingItem]:
+        """Move ticked-off shopping items to the pantry. Returns the moved items.
 
-    def move_shopping_item(self, uid: str, previous_uid: str | None) -> bool:
-        """Move an item to just after previous_uid, or first if None.
-
-        Returns False if the item does not exist.
+        The items keep their recipe links, so recipes stay "ready to cook".
         """
-        item = self.get_shopping_item(uid)
-        if item is None:
-            return False
-        self.shopping.remove(item)
-        index = next(
-            (
-                i + 1
-                for i, other in enumerate(self.shopping)
-                if other.uid == previous_uid
-            ),
-            0 if previous_uid is None else len(self.shopping),
-        )
-        self.shopping.insert(index, item)
-        return True
+        bought = [i for i in self.shopping if i.status == STATUS_COMPLETED]
+        self.delete_items(SHOPPING, {i.uid for i in bought})
+        for item in bought:
+            item.status = STATUS_NEEDS_ACTION
+        self.pantry.extend(bought)
+        return bought

@@ -21,3 +21,5 @@ add_recipe_to_shopping_list:
       example: "Pasta carbonara"
       selector:
         text:
+
+move_bought_to_pantry:

@@ -15,9 +15,9 @@ from homeassistant.loader import async_get_integration
 from .const import CARD_FILENAME, DOMAIN, FRONTEND_URL, IMAGES_URL, REMOVED_ENTITIES
 from .data import FoodPlanningConfigEntry, FoodPlanningData
 from .images import async_delete_all_images, async_repair_images, ensure_images_dir
-from .merge import ShoppingMerger
+from .merge import ListMerger
 from .services import async_setup_services
-from .store import FoodPlanningStore
+from .store import LISTS, FoodPlanningStore
 from .websocket import async_setup_websocket
 
 PLATFORMS = [Platform.TODO]
@@ -50,12 +50,13 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
 async def async_setup_entry(
     hass: HomeAssistant, entry: FoodPlanningConfigEntry
 ) -> bool:
-    """Load stored data and set up the shopping list."""
+    """Load stored data and set up the shopping list and pantry."""
     _remove_old_entities(hass, entry)
     store = await FoodPlanningStore.async_create(hass)
-    merger = ShoppingMerger(hass, entry)
-    entry.async_on_unload(merger.async_cancel)
-    entry.runtime_data = FoodPlanningData(store=store, merger=merger)
+    mergers = {name: ListMerger(hass, entry, name) for name in LISTS}
+    for merger in mergers.values():
+        entry.async_on_unload(merger.async_cancel)
+    entry.runtime_data = FoodPlanningData(store=store, mergers=mergers)
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     entry.async_create_background_task(
         hass, async_repair_images(hass, store), "food_planning image repair"
@@ -76,7 +77,7 @@ def _remove_old_entities(hass: HomeAssistant, entry: FoodPlanningConfigEntry) ->
 async def async_unload_entry(
     hass: HomeAssistant, entry: FoodPlanningConfigEntry
 ) -> bool:
-    """Unload the shopping list."""
+    """Unload the lists."""
     return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
 
 

@@ -24,8 +24,10 @@ from .const import (
     CONF_AI_TASK_ENTITY,
     CONF_LANGUAGE,
     CONF_MERGE_SHOPPING,
+    CONF_UPDATE_PANTRY,
     DEFAULT_LANGUAGE,
     DEFAULT_MERGE_SHOPPING,
+    DEFAULT_UPDATE_PANTRY,
     DOMAIN,
 )
 
@@ -39,6 +41,9 @@ OPTIONS_SCHEMA = vol.Schema(
         vol.Required(CONF_LANGUAGE, default=DEFAULT_LANGUAGE): TextSelector(),
         vol.Required(
             CONF_MERGE_SHOPPING, default=DEFAULT_MERGE_SHOPPING
+        ): BooleanSelector(),
+        vol.Required(
+            CONF_UPDATE_PANTRY, default=DEFAULT_UPDATE_PANTRY
         ): BooleanSelector(),
     }
 )

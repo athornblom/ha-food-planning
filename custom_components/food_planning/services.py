@@ -23,11 +23,13 @@ from .const import (
     DOMAIN,
     SERVICE_ADD_TO_SHOPPING_LIST,
     SERVICE_IMPORT_RECIPE,
+    SERVICE_MOVE_BOUGHT_TO_PANTRY,
 )
 from .data import (
     FoodPlanningConfigEntry,
     async_add_recipe_to_shopping,
     async_import_recipe,
+    async_move_bought_to_pantry,
 )
 
 IMPORT_SCHEMA = vol.All(
@@ -92,6 +94,16 @@ def async_setup_services(hass: HomeAssistant) -> None:
         await store.async_save()
         return {"added": added} if call.return_response else None
 
+    async def move_bought_to_pantry(call: ServiceCall) -> ServiceResponse:
+        moved = await async_move_bought_to_pantry(_loaded_entry(hass))
+        return {"moved": moved} if call.return_response else None
+
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_MOVE_BOUGHT_TO_PANTRY,
+        move_bought_to_pantry,
+        supports_response=SupportsResponse.OPTIONAL,
+    )
     hass.services.async_register(
         DOMAIN,
         SERVICE_IMPORT_RECIPE,
