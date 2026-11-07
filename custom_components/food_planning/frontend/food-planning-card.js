@@ -218,15 +218,32 @@ const CATEGORY_ICONS = {
   kyckling: "🍗", chicken: "🍗",
   kött: "🥩", meat: "🥩",
   pasta: "🍝",
+  matlåda: "🍱", "lunch box": "🍱", matlådor: "🍱",
+  helg: "🕯️", weekend: "🕯️",
+  fest: "🎉",
   dryck: "🍹", drinks: "🍹", drink: "🍹",
-  fest: "🎉", party: "🎉",
+  party: "🎉",
   tillbehör: "🥖", "side dish": "🥖", sides: "🥖",
   sås: "🥣", sauce: "🥣",
 };
-const CATEGORY_COLORS = ["#e53935", "#d81b60", "#8e24aa", "#5e35b1", "#1e88e5", "#00897b", "#43a047", "#f4511e", "#6d4c41", "#c0ca33"];
+const CATEGORY_COLORS = [
+  "#e53935", "#d81b60", "#8e24aa", "#5e35b1", "#1e88e5", "#00897b", "#43a047",
+  "#f4511e", "#6d4c41", "#c0ca33", "#ffb300", "#7cb342", "#00acc1",
+];
+// The default categories get colors that don't clash with each other.
 const FIXED_COLORS = {
-  efterrätt: 1, dessert: 1, bakning: 8, baking: 8, middag: 4, dinner: 4, frukost: 7, breakfast: 7,
-  lunch: 5, plockmat: 6, tilltugg: 6, snacks: 6, tapas: 6, vegetariskt: 6, vegetarian: 6, snabbt: 9, quick: 9, förrätt: 3, starter: 3, mellanmål: 0, snack: 0,
+  frukost: 7, breakfast: 7,
+  middag: 4, dinner: 4,
+  förrätt: 3, starter: 3,
+  efterrätt: 1, dessert: 1,
+  bakning: 8, baking: 8,
+  plockmat: 2, "finger food": 2,
+  mellanmål: 0, snack: 0,
+  soppa: 10, soup: 10,
+  sallad: 11, salad: 11,
+  vegetariskt: 6, vegetarian: 6,
+  matlåda: 5, "lunch box": 5,
+  helg: 12, weekend: 12,
 };
 
 function categoryColor(name) {
