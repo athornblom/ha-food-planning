@@ -9,6 +9,35 @@ Extraction goes through Home Assistant's own **AI task** feature, so the
 API key and model live in an AI integration you already trust (for example
 Anthropic with Claude Haiku 5.5), not in this integration.
 
+> [!WARNING]
+> This is a personal hobby project, provided as is, without warranty of
+> any kind. Use it at your own risk. It sends recipe pages and your food
+> lists to the AI provider you configure, and that provider bills you for
+> the API usage. Keep backups of your Home Assistant configuration.
+
+## Installation
+
+[![Open in the Marketplace](https://my.home-assistant.io/badges/marketplace_repository.svg)](https://my.home-assistant.io/redirect/marketplace_repository/?owner=athornblom&repository=ha-food-planning&category=integration)
+
+1. Click the button above, or go to Settings → Marketplace → ⋮ → Custom
+   repositories and add this repository as an **Integration**.
+2. Install **Food Planning** and restart Home Assistant.
+3. Add the integration:
+
+   [![Add integration](https://my.home-assistant.io/badges/config_flow_start.svg)](https://my.home-assistant.io/redirect/config_flow_start/?domain=food_planning)
+
+   or Settings → Devices & services → Add integration → **Food Planning**.
+
+Updates show up in the Marketplace when a new GitHub release is published.
+
+### Requirements
+
+- Home Assistant 2026.11 or newer.
+- An AI integration that provides an AI task entity, e.g. **Anthropic**
+  (Settings → Devices & services → Add integration → Anthropic) with a
+  model such as Claude Haiku 5.5. API usage is billed by the provider; a
+  Claude subscription does not include API usage.
+
 ## How a link becomes a recipe
 
 1. **Recipe pages:** most recipe sites embed the recipe as schema.org
@@ -181,32 +210,6 @@ Finished timers stay (ringing) until dismissed, at most 15 minutes.
 - `food_planning.pause_timer`, `resume_timer`, `cancel_timer`: optional
   `timer` (ID or label); without it, all timers.
 - `food_planning.extend_timer`: `duration` to add, optional `timer`.
-
-## Requirements
-
-- Home Assistant 2026.11 or newer.
-- An AI integration that provides an AI task entity, e.g. **Anthropic**
-  (Settings → Devices & services → Add integration → Anthropic) with a
-  model such as Claude Haiku 5.5. API usage is billed by the provider; a
-  Claude subscription does not include API usage.
-
-## Installation
-
-### Manual
-
-1. Copy `custom_components/food_planning/` into `/config/custom_components/`
-   on the Home Assistant host (Samba share or the Studio Code Server app).
-2. Restart Home Assistant.
-3. Settings → Devices & services → Add integration → **Food Planning**.
-
-Updating means copying the folder again and restarting.
-
-### From the Marketplace
-
-Settings → Marketplace → ⋮ → Custom repositories → add this repository as
-an **Integration**, install **Food Planning**, then add the integration as
-above. Updates show up in the Marketplace when a new GitHub release is
-published.
 
 ## Configuration
 
