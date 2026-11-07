@@ -17,6 +17,7 @@ from .const import STORAGE_KEY, STORAGE_VERSION
 STATUS_NEEDS_ACTION = "needs_action"
 STATUS_COMPLETED = "completed"
 # Recipe categories a new install starts with; users add and remove their own.
+# No "quick" category: the cooking time and the card's quick filter cover it.
 DEFAULT_CATEGORIES = {
     "sv": [
         "Frukost",
@@ -26,8 +27,8 @@ DEFAULT_CATEGORIES = {
         "Efterrätt",
         "Bakning",
         "Mellanmål",
+        "Plockmat",
         "Vegetariskt",
-        "Snabbt",
     ],
     "en": [
         "Breakfast",
@@ -37,8 +38,8 @@ DEFAULT_CATEGORIES = {
         "Dessert",
         "Baking",
         "Snack",
+        "Finger food",
         "Vegetarian",
-        "Quick",
     ],
 }
 
