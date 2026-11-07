@@ -116,9 +116,10 @@ type: custom:food-planning-card
   picks fitting ones from your list when importing; change a recipe's with
   ✎, and filter by category in the card. **✎ Kategorier** in the card
   edits the list itself: rename (recipes keep the category), remove, add,
-  and describe what belongs in each ("dips, tapas, chips and other food
-  to share"). The AI goes by these descriptions; the default categories
-  come with one.
+  and describe what belongs in each ("chips och dipp, ostbricka, tapas").
+  The AI goes by these descriptions; the default categories come with one,
+  with dishes from Swedish home cooking as examples (English category
+  names get English descriptions).
   **Save and re-sort all recipes** then has the AI pick categories again
   for every recipe, in one call per 25 recipes. The list is also on the
   settings page (Configure), one per line.
