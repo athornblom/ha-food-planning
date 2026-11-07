@@ -111,9 +111,10 @@ type: custom:food-planning-card
   delete the recipe (asks for confirmation).
 - The ✎ button edits a recipe: name, servings, ingredients and steps (one
   per line), tips and source link.
-- **Categories** (Middag, Efterrätt, Bakning, …): the AI picks fitting
-  ones from your list when importing; change them with ✎, and filter by
-  category in the card. Manage the list itself on the settings page
+- **Categories** (Middag, Efterrätt, Bakning, …) show as colored labels,
+  with an icon for the common ones (🍰 Efterrätt, 🍽️ Middag, …). The AI
+  picks fitting ones from your list when importing; change them with ✎,
+  and filter by category in the card. Manage the list itself on the settings page
   (Settings → Devices & services → Food Planning → Configure), one per
   line. It starts with a default set.
 - **What's at home decides "ready to cook".** Every ingredient and At home
@@ -133,7 +134,12 @@ type: custom:food-planning-card
   (browser Wake Lock; needs Home Assistant opened over https).
 - **Lagad** marks a recipe as cooked and has the AI subtract what it used
   from At home.
-- Search by recipe name or ingredient, and filter by status or category.
+- **Cooking time:** each recipe shows its total time (⏱ 25 min), the
+  time the recipe page states or else the AI's estimate. Recipes saved
+  before this got an estimate once. **⚡ Max 30 min** shows only the quick
+  ones, fastest first. Change the time with ✎.
+- Search by recipe name or ingredient, and filter by status, time or
+  category.
 
 ### Shopping list
 

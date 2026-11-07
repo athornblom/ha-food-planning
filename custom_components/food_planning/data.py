@@ -76,6 +76,8 @@ async def async_import_recipe(
         source_url=source.url,
         image_url=source.image_url,
         categories=entry.runtime_data.store.normalize_categories(extracted.categories),
+        total_minutes=extracted.total_minutes,
+        time_checked=True,
     )
     recipe.image = await async_save_image(hass, recipe.uid, source.image_url)
 

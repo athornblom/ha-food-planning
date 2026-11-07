@@ -119,6 +119,12 @@ class Recipe:
     # the recipe is marked as cooked. Drives "ready to cook".
     on_shopping_list: bool = False
     categories: list[str] = field(default_factory=list)
+    # Total time from start to served, in minutes: from the source, or
+    # estimated by the AI. time_checked is set once it has been looked up,
+    # so recipes saved before times existed get one estimate, and a time
+    # the user cleared isn't estimated again.
+    total_minutes: int | None = None
+    time_checked: bool = False
     # Indexes of ingredients not at home, worked out from the product names
     # after the pantry or the recipe changed; None until checked. See
     # pantry_match.py.
@@ -310,9 +316,19 @@ class FoodPlanningStore:
         if "ingredients" in changes and changes["ingredients"] != recipe.ingredients:
             # The indexes no longer fit; re-checked right after saving.
             recipe.missing = None
-        for key in ("title", "servings", "ingredients", "steps", "notes", "source_url"):
+        for key in (
+            "title",
+            "servings",
+            "ingredients",
+            "steps",
+            "notes",
+            "source_url",
+            "total_minutes",
+        ):
             if key in changes:
                 setattr(recipe, key, changes[key])
+        if "total_minutes" in changes:
+            recipe.time_checked = True
         if "categories" in changes:
             recipe.categories = self.normalize_categories(changes["categories"])
         if recipe.title != old_title:

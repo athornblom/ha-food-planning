@@ -78,6 +78,11 @@ RECIPE_STRUCTURE: dict[str, Any] = {
         "required": True,
         "selector": {"text": {"multiple": True}},
     },
+    "total_minutes": {
+        "description": "Total time from start to served, in minutes.",
+        "required": False,
+        "selector": {"number": {"min": 0, "max": 10080, "step": 1}},
+    },
     "notes": {
         "description": "Short useful tips from the source. Empty if none.",
         "required": False,
@@ -93,6 +98,7 @@ INSTRUCTIONS = """Extract the recipe from the content below.
 - List each ingredient as its own item, amount first (for example \
 "2 dl grädde"). Do not include section headings as ingredients.
 - Keep the steps faithful to the source; do not invent quantities or steps.
+- Set total_minutes to the total time from start to served, including waiting, rising and baking: the time the source states (e.g. totalTime), or else your estimate from the steps.
 - Pick the categories that fit the dish from this list only: {categories}. \
 Usually one or two; none if nothing fits.
 - If the content does not contain a recipe, set is_recipe to false and \
@@ -127,6 +133,16 @@ class ExtractedRecipe:
     servings: str | None
     notes: str | None
     categories: list[str]
+    total_minutes: int | None = None
+
+
+def as_minutes(value: Any) -> int | None:
+    """A positive number of minutes (up to a week), or None."""
+    try:
+        minutes = round(float(value))
+    except (TypeError, ValueError, OverflowError):
+        return None
+    return minutes if 0 < minutes <= 10080 else None
 
 
 def _error(key: str, **placeholders: str) -> HomeAssistantError:
@@ -437,4 +453,5 @@ async def async_extract_recipe(
         servings=_as_optional_text(data.get("servings")),
         notes=_as_optional_text(data.get("notes")),
         categories=_as_text_list(data.get("categories")),
+        total_minutes=as_minutes(data.get("total_minutes")),
     )

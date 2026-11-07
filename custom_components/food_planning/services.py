@@ -110,6 +110,7 @@ def async_setup_services(hass: HomeAssistant) -> None:
             "uid": recipe.uid,
             "title": recipe.title,
             "servings": recipe.servings,
+            "total_minutes": recipe.total_minutes,
             "ingredients": recipe.ingredients,
             "steps": recipe.steps,
             "notes": recipe.notes,

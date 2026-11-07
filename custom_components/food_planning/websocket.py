@@ -108,6 +108,7 @@ def _recipe_json(store: FoodPlanningStore, recipe: Recipe) -> dict[str, Any]:
         "image_url": image_url(recipe.image) if recipe.image else recipe.image_url,
         "created": recipe.created,
         "categories": recipe.categories,
+        "total_minutes": recipe.total_minutes,
     }
 
 
@@ -185,6 +186,9 @@ _OPTIONAL_TEXT = vol.Any(None, vol.All(str, vol.Strip))
         vol.Optional("steps"): _TEXT_LIST,
         vol.Optional("notes"): _OPTIONAL_TEXT,
         vol.Optional("source_url"): _OPTIONAL_TEXT,
+        vol.Optional("total_minutes"): vol.Any(
+            None, vol.All(vol.Coerce(int), vol.Range(min=1, max=10080))
+        ),
         vol.Optional("categories"): [str],
     }
 )

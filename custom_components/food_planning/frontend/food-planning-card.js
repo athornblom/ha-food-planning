@@ -26,6 +26,7 @@ const STRINGS = {
     filterAll: "Alla",
     filterReady: "Redo att laga",
     filterMissing: "Saknar något",
+    filterQuick: "⚡ Max 30 min",
     allCategories: "Alla kategorier",
     fieldCategories: "Kategorier",
     categoriesHint: "Kategorierna hanteras under Inställningar → Enheter och tjänster → Food Planning → Konfigurera.",
@@ -59,6 +60,7 @@ const STRINGS = {
     save: "Spara",
     fieldTitle: "Namn",
     fieldServings: "Portioner",
+    fieldTime: "Tid (minuter)",
     fieldIngredients: "Ingredienser (en per rad)",
     fieldSteps: "Gör så här (ett steg per rad)",
     fieldNotes: "Tips",
@@ -83,6 +85,7 @@ const STRINGS = {
     filterAll: "All",
     filterReady: "Ready to cook",
     filterMissing: "Missing something",
+    filterQuick: "⚡ 30 min or less",
     allCategories: "All categories",
     fieldCategories: "Categories",
     categoriesHint: "Manage categories under Settings → Devices & services → Food Planning → Configure.",
@@ -116,6 +119,7 @@ const STRINGS = {
     save: "Save",
     fieldTitle: "Name",
     fieldServings: "Servings",
+    fieldTime: "Time (minutes)",
     fieldIngredients: "Ingredients (one per line)",
     fieldSteps: "Steps (one per line)",
     fieldNotes: "Tips",
@@ -170,6 +174,60 @@ function lines(text) {
     .filter(Boolean);
 }
 
+// Quick recipes: the "fast" filter shows these, quickest first.
+const QUICK_MINUTES = 30;
+
+// Icons for the default categories (and common ones users add); others get
+// a dot. Matched case-insensitively.
+const CATEGORY_ICONS = {
+  frukost: "🥐", breakfast: "🥐",
+  lunch: "🥪",
+  middag: "🍽️", dinner: "🍽️",
+  förrätt: "🥗", starter: "🥗",
+  efterrätt: "🍰", dessert: "🍰", efterrätter: "🍰", desserts: "🍰",
+  bakning: "🧁", baking: "🧁",
+  mellanmål: "🍎", snack: "🍎",
+  vegetariskt: "🥦", vegetarian: "🥦", vegan: "🌱", veganskt: "🌱",
+  snabbt: "⚡", quick: "⚡",
+  soppa: "🍲", soup: "🍲",
+  sallad: "🥗", salad: "🥗",
+  fisk: "🐟", fish: "🐟", "fisk & skaldjur": "🐟", seafood: "🦐",
+  kyckling: "🍗", chicken: "🍗",
+  kött: "🥩", meat: "🥩",
+  pasta: "🍝",
+  dryck: "🍹", drinks: "🍹", drink: "🍹",
+  fest: "🎉", party: "🎉",
+  tillbehör: "🥖", "side dish": "🥖", sides: "🥖",
+  sås: "🥣", sauce: "🥣",
+};
+const CATEGORY_COLORS = ["#e53935", "#d81b60", "#8e24aa", "#5e35b1", "#1e88e5", "#00897b", "#43a047", "#f4511e", "#6d4c41", "#c0ca33"];
+const FIXED_COLORS = {
+  efterrätt: 1, dessert: 1, bakning: 8, baking: 8, middag: 4, dinner: 4, frukost: 7, breakfast: 7,
+  lunch: 5, vegetariskt: 6, vegetarian: 6, snabbt: 9, quick: 9, förrätt: 3, starter: 3, mellanmål: 0, snack: 0,
+};
+
+function categoryColor(name) {
+  const key = name.toLowerCase();
+  if (key in FIXED_COLORS) return CATEGORY_COLORS[FIXED_COLORS[key]];
+  let hash = 0;
+  for (const ch of key) hash = (hash * 31 + ch.codePointAt(0)) >>> 0;
+  return CATEGORY_COLORS[hash % CATEGORY_COLORS.length];
+}
+
+/** A colored label for a category, e.g. "🍰 Efterrätt". */
+function categoryLabel(name, tag = "span") {
+  const icon = CATEGORY_ICONS[name.toLowerCase()];
+  const node = el(tag, { cls: "cat", text: icon ? `${icon} ${name}` : name });
+  node.style.setProperty("--cat", categoryColor(name));
+  if (!icon) node.classList.add("dot");
+  return node;
+}
+
+/** "25 min", "1 h 30 min". */
+function formatMinutes(minutes) {
+  return formatDuration(minutes * 60);
+}
+
 const SHARED_CSS = `
   :host { --fp-radius: var(--ha-card-border-radius, 12px); --fp-danger: var(--error-color, #db4437); }
   button {
@@ -202,6 +260,15 @@ const SHARED_CSS = `
     background: var(--secondary-background-color); color: var(--secondary-text-color);
   }
   .badge.ready { background: var(--success-color, #43a047); color: #fff; }
+  .cat {
+    display: inline-flex; align-items: center; gap: 4px; font-size: 12px; font-weight: 500;
+    padding: 2px 9px; border-radius: 999px; line-height: 1.5; white-space: nowrap;
+    background: color-mix(in srgb, var(--cat) 16%, transparent);
+    color: color-mix(in srgb, var(--cat) 75%, var(--primary-text-color));
+    border: 1px solid color-mix(in srgb, var(--cat) 35%, transparent);
+  }
+  .cat.dot::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--cat); }
+  .time { white-space: nowrap; }
 `;
 
 class FoodPlanningCard extends HTMLElement {
@@ -309,8 +376,24 @@ class FoodPlanningCard extends HTMLElement {
       .tile img, .tile .placeholder { width: 100%; aspect-ratio: 4 / 3; object-fit: cover; }
       .tile .badge { position: absolute; top: 8px; left: 8px; box-shadow: 0 1px 4px rgba(0,0,0,.4); }
       .tile .badge:not(.ready) { background: rgba(0, 0, 0, 0.65); color: #fff; }
-      .tile .name { padding: 8px 10px 2px; font-weight: 500; line-height: 1.25; }
+      .tile .badge.time { left: auto; right: 8px; background: rgba(0, 0, 0, 0.65); color: #fff; }
+      .tile .badge.time.quick { background: var(--primary-color); color: var(--text-primary-color, #fff); }
+      .tile .name { padding: 8px 10px 4px; font-weight: 500; line-height: 1.25; }
+      .tile .cats { display: flex; flex-wrap: wrap; gap: 4px; padding: 0 10px 6px; }
       .tile .meta { padding: 0 10px 10px; font-size: 12px; color: var(--secondary-text-color); }
+      .tile .meta:empty { display: none; }
+      .tile .cats:empty + .meta:empty { display: none; }
+      .tile > :last-child { margin-bottom: 4px; }
+      .chip.cat {
+        padding: 5px 12px; font-size: 13px; cursor: pointer;
+        background: color-mix(in srgb, var(--cat) 16%, transparent);
+        color: color-mix(in srgb, var(--cat) 75%, var(--primary-text-color));
+        border: 1px solid color-mix(in srgb, var(--cat) 35%, transparent);
+      }
+      .chip.cat.active {
+        background: var(--cat); color: #fff; border-color: transparent;
+      }
+      .chip.cat.active.dot::before { background: #fff; }
       .empty { margin: 16px 0 0; color: var(--secondary-text-color); }
     `,
     });
@@ -344,6 +427,13 @@ class FoodPlanningCard extends HTMLElement {
       });
       this._chips.append(chip);
     }
+    this._quick = false;
+    this._quickChip = el("button", { cls: "chip", text: t.filterQuick });
+    this._quickChip.addEventListener("click", () => {
+      this._quick = !this._quick;
+      this._renderGrid();
+    });
+    this._chips.append(this._quickChip);
     this._categoryChips = el("div", { cls: "categories" });
     this._grid = el("div", { cls: "grid" });
     this._empty = el("p", { cls: "empty", attrs: { hidden: "" } });
@@ -404,7 +494,8 @@ class FoodPlanningCard extends HTMLElement {
       return;
     }
     const chip = (label, value) => {
-      const node = el("button", { cls: "chip", text: label });
+      const node = value === null ? el("button", { cls: "chip", text: label }) : categoryLabel(value, "button");
+      node.classList.add("chip");
       node.classList.toggle("active", this._category === value);
       node.addEventListener("click", () => {
         this._category = value;
@@ -424,10 +515,12 @@ class FoodPlanningCard extends HTMLElement {
     const t = this._t;
     const recipes = this._recipes || [];
     for (const chip of this._chips.children) {
-      chip.classList.toggle("active", chip.dataset.filter === this._filter);
+      if (chip.dataset.filter) chip.classList.toggle("active", chip.dataset.filter === this._filter);
     }
+    this._quickChip.classList.toggle("active", this._quick);
     const shown = recipes.filter((r) => {
       if (this._filter !== "all" && r.status !== this._filter) return false;
+      if (this._quick && !(r.total_minutes && r.total_minutes <= QUICK_MINUTES)) return false;
       if (this._category && !(r.categories || []).includes(this._category)) return false;
       if (!this._search) return true;
       return (
@@ -436,6 +529,7 @@ class FoodPlanningCard extends HTMLElement {
       );
     });
 
+    if (this._quick) shown.sort((a, b) => a.total_minutes - b.total_minutes);
     this._grid.replaceChildren(...shown.map((recipe) => this._tile(recipe)));
     let emptyText = "";
     if (this._recipes !== null) {
@@ -452,12 +546,15 @@ class FoodPlanningCard extends HTMLElement {
     tile.append(recipeImage(recipe));
     if (recipe.status === "ready") tile.append(el("span", { cls: "badge ready", text: t.ready }));
     if (recipe.status === "missing") tile.append(el("span", { cls: "badge", text: t.missingBadge(recipe.missing.length) }));
+    if (recipe.total_minutes) {
+      const time = el("span", { cls: "badge time", text: `⏱ ${formatMinutes(recipe.total_minutes)}` });
+      time.classList.toggle("quick", recipe.total_minutes <= QUICK_MINUTES);
+      tile.append(time);
+    }
     tile.append(
       el("span", { cls: "name", text: recipe.title }),
-      el("span", {
-        cls: "meta",
-        text: [recipe.servings, ...(recipe.categories || [])].filter(Boolean).join(" · "),
-      })
+      el("span", { cls: "cats" }, ...(recipe.categories || []).map((c) => categoryLabel(c))),
+      el("span", { cls: "meta", text: recipe.servings || "" })
     );
     tile.addEventListener("click", () => this._open(recipe.uid));
     return tile;
@@ -1278,7 +1375,7 @@ class FoodPlanningRecipeDialog extends HTMLElement {
       form label { display: block; margin-top: 14px; font-size: 13px; color: var(--secondary-text-color); }
       form label > input, form label > textarea { margin-top: 4px; }
       form textarea { resize: vertical; line-height: 1.45; }
-      .row { display: grid; grid-template-columns: 2fr 1fr; gap: 12px; }
+      .row { display: grid; grid-template-columns: 2fr 1fr 1fr; gap: 12px; }
       .tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
       .pick { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
       .pick button {
@@ -1286,8 +1383,14 @@ class FoodPlanningRecipeDialog extends HTMLElement {
         color: var(--primary-text-color); border: 1px solid var(--divider-color);
       }
       .pick button.on { background: var(--primary-color); color: var(--text-primary-color, #fff); border-color: transparent; }
+      .pick button.cat { padding: 6px 12px; font-size: 13px; opacity: 0.7; }
+      .pick button.cat.on { background: var(--cat); color: #fff; opacity: 1; }
+      .pick button.cat.on.dot::before { background: #fff; }
       .hint { font-size: 12px; color: var(--secondary-text-color); margin: 6px 0 0; }
-      @media (max-width: 640px) { .row { grid-template-columns: 1fr; } }
+      @media (max-width: 640px) {
+        .row { grid-template-columns: 1fr 1fr; }
+        .row > :first-child { grid-column: 1 / -1; }
+      }
     `,
     });
   }
@@ -1357,6 +1460,7 @@ class FoodPlanningRecipeDialog extends HTMLElement {
 
     const meta = el("p", { cls: "meta" });
     const metaParts = [];
+    if (recipe.total_minutes) metaParts.push(el("span", { cls: "time", text: `⏱ ${formatMinutes(recipe.total_minutes)}` }));
     if (recipe.servings) metaParts.push(document.createTextNode(recipe.servings));
     const source = safeUrl(recipe.source_url);
     if (source) {
@@ -1470,7 +1574,7 @@ class FoodPlanningRecipeDialog extends HTMLElement {
     this._status = el("p", { cls: "status", attrs: { hidden: "" } });
 
     const tags = (recipe.categories || []).length
-      ? el("div", { cls: "tags" }, ...recipe.categories.map((c) => el("span", { cls: "badge", text: c })))
+      ? el("div", { cls: "tags" }, ...recipe.categories.map((c) => categoryLabel(c)))
       : null;
 
     this._shell(
@@ -1502,6 +1606,8 @@ class FoodPlanningRecipeDialog extends HTMLElement {
 
     const title = input(recipe.title);
     const servings = input(recipe.servings);
+    const time = el("input", { attrs: { type: "number", min: "1", max: "10080", step: "1", inputmode: "numeric" } });
+    time.value = recipe.total_minutes || "";
     const ingredients = area(recipe.ingredients.join("\n"), Math.min(14, recipe.ingredients.length + 2));
     const steps = area(recipe.steps.join("\n"), Math.min(14, recipe.steps.length + 3));
     const notes = area(recipe.notes, 3);
@@ -1509,7 +1615,8 @@ class FoodPlanningRecipeDialog extends HTMLElement {
     const selected = new Set(recipe.categories || []);
     const picker = el("div", { cls: "pick" });
     for (const name of this._categories || []) {
-      const b = el("button", { text: name, attrs: { type: "button" } });
+      const b = categoryLabel(name, "button");
+      b.type = "button";
       b.classList.toggle("on", selected.has(name));
       b.addEventListener("click", () => {
         if (selected.has(name)) selected.delete(name);
@@ -1538,7 +1645,7 @@ class FoodPlanningRecipeDialog extends HTMLElement {
     const form = el(
       "form",
       {},
-      el("div", { cls: "row" }, field(t.fieldTitle, title), field(t.fieldServings, servings)),
+      el("div", { cls: "row" }, field(t.fieldTitle, title), field(t.fieldServings, servings), field(t.fieldTime, time)),
       categoriesField,
       field(t.fieldIngredients, ingredients),
       field(t.fieldSteps, steps),
@@ -1560,6 +1667,7 @@ class FoodPlanningRecipeDialog extends HTMLElement {
           uid: this._uid,
           title: title.value.trim(),
           servings: servings.value.trim() || null,
+          total_minutes: Math.round(Number(time.value)) > 0 ? Math.min(10080, Math.round(Number(time.value))) : null,
           ingredients: lines(ingredients.value),
           steps: lines(steps.value),
           notes: notes.value.trim() || null,
@@ -2180,6 +2288,7 @@ class FoodPlanningCookCard extends HTMLElement {
       }
       .pill img, .pill .placeholder { width: 32px; height: 32px; border-radius: 50%; object-fit: cover; font-size: 16px; }
       .pill:focus-visible { outline: 2px solid var(--primary-color); }
+      .pill .time, li .name .time { font-size: 12px; font-weight: 400; color: var(--secondary-text-color); }
       ul { list-style: none; margin: 0; padding: 0; }
       li { display: flex; align-items: center; gap: 10px; padding: 6px 0; border-bottom: 1px solid var(--divider-color); }
       li .what { flex: 1; min-width: 0; cursor: pointer; }
@@ -2201,6 +2310,7 @@ class FoodPlanningCookCard extends HTMLElement {
         const row = el("div", { cls: "ready" });
         for (const recipe of ready) {
           const pill = el("button", { cls: "pill" }, recipeImage(recipe), el("span", { text: recipe.title }));
+          if (recipe.total_minutes) pill.append(el("span", { cls: "time", text: formatMinutes(recipe.total_minutes) }));
           pill.addEventListener("click", () => this._open(recipe.uid));
           row.append(pill);
         }
@@ -2213,7 +2323,11 @@ class FoodPlanningCookCard extends HTMLElement {
           const what = el(
             "div",
             { cls: "what" },
-            el("div", { cls: "name", text: recipe.title }),
+            el(
+              "div",
+              { cls: "name", text: recipe.title },
+              ...(recipe.total_minutes ? [el("span", { cls: "time", text: ` · ${formatMinutes(recipe.total_minutes)}` })] : [])
+            ),
             el("div", { cls: "miss", text: t.missing(recipe.missing) })
           );
           what.addEventListener("click", () => this._open(recipe.uid));
