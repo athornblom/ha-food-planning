@@ -27,9 +27,10 @@ from .merge import ListMerger
 from .pantry_match import PantryMatcher
 from .services import async_setup_services
 from .store import LISTS, FoodPlanningStore
+from .timers import TimerManager
 from .websocket import async_setup_websocket
 
-PLATFORMS = [Platform.TODO]
+PLATFORMS = [Platform.EVENT, Platform.SENSOR, Platform.TODO]
 
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
@@ -59,7 +60,7 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
 async def async_setup_entry(
     hass: HomeAssistant, entry: FoodPlanningConfigEntry
 ) -> bool:
-    """Load stored data and set up the shopping list and pantry."""
+    """Load stored data and set up the lists and the cooking timers."""
     _remove_old_entities(hass, entry)
     language = entry.options.get(CONF_LANGUAGE, DEFAULT_LANGUAGE).casefold()
     store = await FoodPlanningStore.async_create(
@@ -70,11 +71,18 @@ async def async_setup_entry(
         entry.async_on_unload(merger.async_cancel)
     matcher = PantryMatcher(hass, entry)
     entry.async_on_unload(matcher.async_cancel)
-    entry.runtime_data = FoodPlanningData(store=store, mergers=mergers, matcher=matcher)
+    timers = TimerManager(hass)
+    await timers.async_load()
+    entry.async_on_unload(timers.async_stop)
+    entry.runtime_data = FoodPlanningData(
+        store=store, mergers=mergers, matcher=matcher, timers=timers
+    )
     # Re-check missing ingredients whenever the pantry or recipes change.
     entry.async_on_unload(store.async_add_listener(matcher.async_schedule))
     matcher.async_schedule()
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    # After the entities, so timers that ended during a restart fire events.
+    timers.async_start()
     entry.async_create_background_task(
         hass, async_repair_images(hass, store), "food_planning image repair"
     )
@@ -101,6 +109,7 @@ async def async_unload_entry(
 async def async_remove_entry(
     hass: HomeAssistant, entry: FoodPlanningConfigEntry
 ) -> None:
-    """Delete recipes, the shopping list and saved images."""
+    """Delete recipes, the shopping list, timers and saved images."""
     await FoodPlanningStore(hass).async_remove()
+    await TimerManager(hass).async_remove()
     await async_delete_all_images(hass)

@@ -14,6 +14,7 @@ from .images import async_delete_image, async_save_image
 from .merge import ListMerger
 from .pantry_match import PantryMatcher
 from .store import PANTRY, SHOPPING, FoodPlanningStore, Recipe
+from .timers import TimerManager
 
 type FoodPlanningConfigEntry = ConfigEntry[FoodPlanningData]
 
@@ -27,6 +28,8 @@ class FoodPlanningData:
     mergers: dict[str, ListMerger]
     # Re-checks which recipe ingredients are missing at home.
     matcher: PantryMatcher
+    # Cooking timers.
+    timers: TimerManager
 
 
 async def async_import_recipe(

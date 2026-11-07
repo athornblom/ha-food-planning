@@ -7,6 +7,27 @@
       "pantry": {
         "default": "mdi:fridge-outline"
       }
+    },
+    "event": {
+      "timer": {
+        "default": "mdi:timer-outline",
+        "state_attributes": {
+          "event_type": {
+            "state": {
+              "started": "mdi:timer-play-outline",
+              "paused": "mdi:timer-pause-outline",
+              "resumed": "mdi:timer-play-outline",
+              "finished": "mdi:timer-check-outline",
+              "cancelled": "mdi:timer-off-outline"
+            }
+          }
+        }
+      }
+    },
+    "sensor": {
+      "next_timer": {
+        "default": "mdi:timer-sand"
+      }
     }
   },
   "services": {
@@ -18,6 +39,21 @@
     },
     "move_bought_to_pantry": {
       "service": "mdi:home-import-outline"
+    },
+    "start_timer": {
+      "service": "mdi:timer-play-outline"
+    },
+    "pause_timer": {
+      "service": "mdi:timer-pause-outline"
+    },
+    "resume_timer": {
+      "service": "mdi:timer-play-outline"
+    },
+    "cancel_timer": {
+      "service": "mdi:timer-off-outline"
+    },
+    "extend_timer": {
+      "service": "mdi:timer-plus-outline"
     }
   }
 }

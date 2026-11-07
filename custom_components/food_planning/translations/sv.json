@@ -49,6 +49,38 @@
       "pantry": {
         "name": "Hemma"
       }
+    },
+    "event": {
+      "timer": {
+        "name": "Matlagningstimer",
+        "state_attributes": {
+          "event_type": {
+            "state": {
+              "started": "Startad",
+              "paused": "Pausad",
+              "resumed": "Återupptagen",
+              "finished": "Klar",
+              "cancelled": "Avbruten"
+            }
+          }
+        }
+      }
+    },
+    "sensor": {
+      "next_timer": {
+        "name": "Nästa timer",
+        "state_attributes": {
+          "label": {
+            "name": "Namn"
+          },
+          "recipe": {
+            "name": "Recept"
+          },
+          "timers": {
+            "name": "Timers"
+          }
+        }
+      }
     }
   },
   "services": {
@@ -91,6 +123,68 @@
     "move_bought_to_pantry": {
       "name": "Flytta inhandlat hem",
       "description": "Flyttar avbockade varor från inköpslistan till listan Hemma. Dubbletter slås sedan ihop av AI:n."
+    },
+    "start_timer": {
+      "name": "Starta matlagningstimer",
+      "description": "Startar en matlagningstimer. Den visas i Food Planning-vyerna, och händelsen Matlagningstimer utlöses när den är klar.",
+      "fields": {
+        "duration": {
+          "name": "Tid",
+          "description": "Hur länge timern går."
+        },
+        "label": {
+          "name": "Namn",
+          "description": "Vad timern gäller, t.ex. \"Koka pastan\"."
+        },
+        "recipe": {
+          "name": "Recept",
+          "description": "Receptets namn eller ID som timern hör till."
+        }
+      }
+    },
+    "pause_timer": {
+      "name": "Pausa matlagningstimer",
+      "description": "Pausar timers som går.",
+      "fields": {
+        "timer": {
+          "name": "Timer",
+          "description": "Timerns ID eller namn. Lämna tomt för alla timers."
+        }
+      }
+    },
+    "resume_timer": {
+      "name": "Fortsätt matlagningstimer",
+      "description": "Startar pausade timers igen.",
+      "fields": {
+        "timer": {
+          "name": "Timer",
+          "description": "Timerns ID eller namn. Lämna tomt för alla timers."
+        }
+      }
+    },
+    "cancel_timer": {
+      "name": "Avbryt matlagningstimer",
+      "description": "Stoppar och tar bort timers, eller stänger av färdiga.",
+      "fields": {
+        "timer": {
+          "name": "Timer",
+          "description": "Timerns ID eller namn. Lämna tomt för alla timers."
+        }
+      }
+    },
+    "extend_timer": {
+      "name": "Lägg till tid på matlagningstimer",
+      "description": "Lägger till tid. En färdig timer startar igen.",
+      "fields": {
+        "timer": {
+          "name": "Timer",
+          "description": "Timerns ID eller namn. Lämna tomt för alla timers."
+        },
+        "duration": {
+          "name": "Tid att lägga till",
+          "description": "Hur mycket tid som läggs till."
+        }
+      }
     }
   },
   "exceptions": {
@@ -123,6 +217,9 @@
     },
     "item_not_found": {
       "message": "Posten {uid} hittades inte."
+    },
+    "timer_not_found": {
+      "message": "Ingen matlagningstimer matchar \"{timer}\"."
     }
   }
 }

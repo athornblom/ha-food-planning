@@ -1,0 +1,60 @@
+blueprint:
+  name: Matlagningstimer klar – notis
+  description: >-
+    Skickar en notis till en telefon när en matlagningstimer från Food
+    Planning är klar, med timerns namn. Valfritt: fler åtgärder, t.ex.
+    blinka en lampa eller säga det i en högtalare.
+  domain: automation
+  source_url: https://github.com/athornblom/ha-food-planning/blob/main/blueprints/automation/food_planning/cooking_timer_finished.yaml
+  input:
+    timer_event:
+      name: Timerhändelse
+      description: Food Planning-integrationens händelse "Matlagningstimer".
+      default: event.food_planning_timer
+      selector:
+        entity:
+          filter:
+            - integration: food_planning
+              domain: event
+    notify_device:
+      name: Telefon
+      description: Telefonen (Companion-appen) som får notisen.
+      selector:
+        device:
+          filter:
+            - integration: mobile_app
+    title:
+      name: Rubrik
+      default: "⏰ Timern är klar"
+      selector:
+        text:
+    extra_actions:
+      name: Fler åtgärder
+      description: Körs också när en timer är klar. Timerns namn finns i variabeln "label".
+      default: []
+      selector:
+        action:
+
+mode: queued
+max: 10
+
+triggers:
+  - trigger: state
+    entity_id: !input timer_event
+
+conditions:
+  - condition: template
+    value_template: "{{ trigger.to_state.attributes.event_type == 'finished' }}"
+
+variables:
+  label: "{{ trigger.to_state.attributes.label }}"
+  recipe: "{{ trigger.to_state.attributes.recipe }}"
+
+actions:
+  - domain: mobile_app
+    type: notify
+    device_id: !input notify_device
+    title: !input title
+    message: "{{ label }}{{ ' (' ~ recipe ~ ')' if recipe and recipe != label else '' }}"
+  - choose: []
+    default: !input extra_actions

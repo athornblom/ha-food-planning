@@ -132,6 +132,34 @@ means it's used up.
   doesn't mention, and items you changed meanwhile, are left alone. Turn
   it off under **Configure**.
 
+### Cooking timers
+
+Times in a recipe's steps ("koka 10 min", "25–30 minuter", "1 timme och
+15 minuter", "en kvart") become ⏱ buttons. Tap one to start a timer, tap
+it again to pause. Running timers show under the dashboard tabs and at the
+bottom of the recipe view, with pause, +1 min and cancel. A range starts on
+the shorter time.
+
+Timers run in Home Assistant, not in the browser: every device shows the
+same countdown, and closing the page or restarting Home Assistant doesn't
+stop them. When one finishes, open dashboards ring and vibrate (after the
+page has been touched once; browsers block sound before that), and:
+
+- `event.food_planning_timer` ("Matlagningstimer" / "Cooking timer") fires
+  `started`, `paused`, `resumed`, `finished` or `cancelled` for any timer,
+  with `label`, `recipe`, `duration` and `timer_id` as attributes. One
+  automation covers every timer.
+- `sensor.food_planning_next_timer` ("Nästa timer" / "Next timer") is when
+  the next running timer ends (unknown when none is running); its `timers`
+  attribute lists all of them.
+
+The blueprint
+[`cooking_timer_finished.yaml`](blueprints/automation/food_planning/cooking_timer_finished.yaml)
+sends a phone notification when a timer finishes:
+[![Import blueprint](https://my.home-assistant.io/badges/blueprint_import.svg)](https://my.home-assistant.io/redirect/blueprint_import/?blueprint_url=https%3A%2F%2Fgithub.com%2Fathornblom%2Fha-food-planning%2Fblob%2Fmain%2Fblueprints%2Fautomation%2Ffood_planning%2Fcooking_timer_finished.yaml)
+
+Finished timers stay (ringing) until dismissed, at most 15 minutes.
+
 ### Actions
 
 - `food_planning.import_recipe`: `url` **or** `text`, plus optional
@@ -141,6 +169,11 @@ means it's used up.
   what isn't at home).
 - `food_planning.move_bought_to_pantry`: move ticked-off shopping items to
   At home.
+- `food_planning.start_timer`: `duration`, optional `label` and `recipe`.
+  Returns the `timer_id`.
+- `food_planning.pause_timer`, `resume_timer`, `cancel_timer`: optional
+  `timer` (ID or label); without it, all timers.
+- `food_planning.extend_timer`: `duration` to add, optional `timer`.
 
 ## Requirements
 
@@ -185,7 +218,8 @@ All can be changed later under the integration's **Configure** button.
 ## Data, backups and removal
 
 - Recipes and the shopping list are stored in
-  `/config/.storage/food_planning`, and recipe images in
+  `/config/.storage/food_planning` (timers in `food_planning.timers`), and
+  recipe images in
   `/config/food_planning/images` (saved at import, since some image links,
   like TikTok's, expire). Both are separate from the code, so updates never
   touch them, and normal Home Assistant backups include them.

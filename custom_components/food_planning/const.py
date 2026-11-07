@@ -22,6 +22,11 @@ DEFAULT_UPDATE_PANTRY: Final = True
 SERVICE_IMPORT_RECIPE: Final = "import_recipe"
 SERVICE_ADD_TO_SHOPPING_LIST: Final = "add_recipe_to_shopping_list"
 SERVICE_MOVE_BOUGHT_TO_PANTRY: Final = "move_bought_to_pantry"
+SERVICE_START_TIMER: Final = "start_timer"
+SERVICE_PAUSE_TIMER: Final = "pause_timer"
+SERVICE_RESUME_TIMER: Final = "resume_timer"
+SERVICE_CANCEL_TIMER: Final = "cancel_timer"
+SERVICE_EXTEND_TIMER: Final = "extend_timer"
 
 ATTR_URL: Final = "url"
 ATTR_TEXT: Final = "text"
@@ -29,6 +34,9 @@ ATTR_ADD_TO_SHOPPING_LIST: Final = "add_to_shopping_list"
 ATTR_RECIPE: Final = "recipe"
 ATTR_ONLY_MISSING: Final = "only_missing"
 ATTR_INGREDIENTS: Final = "ingredients"
+ATTR_DURATION: Final = "duration"
+ATTR_LABEL: Final = "label"
+ATTR_TIMER: Final = "timer"
 
 # The recipe card, served by the integration and loaded on every dashboard.
 FRONTEND_URL: Final = f"/{DOMAIN}/frontend"

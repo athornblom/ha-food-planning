@@ -31,3 +31,52 @@ add_recipe_to_shopping_list:
           multiple: true
 
 move_bought_to_pantry:
+
+start_timer:
+  fields:
+    duration:
+      required: true
+      example: "00:10:00"
+      selector:
+        duration:
+    label:
+      example: "Koka pastan"
+      selector:
+        text:
+    recipe:
+      example: "Pasta carbonara"
+      selector:
+        text:
+
+pause_timer:
+  fields:
+    timer:
+      example: "Koka pastan"
+      selector:
+        text:
+
+resume_timer:
+  fields:
+    timer:
+      example: "Koka pastan"
+      selector:
+        text:
+
+cancel_timer:
+  fields:
+    timer:
+      example: "Koka pastan"
+      selector:
+        text:
+
+extend_timer:
+  fields:
+    timer:
+      example: "Koka pastan"
+      selector:
+        text:
+    duration:
+      required: true
+      example: "00:05:00"
+      selector:
+        duration:

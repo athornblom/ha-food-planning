@@ -12,6 +12,7 @@
 
 const STRINGS = {
   sv: {
+    lang: "sv",
     title: "Recept",
     placeholder: "Klistra in en länk eller recepttext…",
     add: "Lägg till",
@@ -66,6 +67,7 @@ const STRINGS = {
     notLoaded: "Food Planning är inte laddad.",
   },
   en: {
+    lang: "en",
     title: "Recipes",
     placeholder: "Paste a link or recipe text…",
     add: "Add",
@@ -474,6 +476,497 @@ class FoodPlanningCard extends HTMLElement {
   }
 }
 
+/* ------------------------------------------------------------------ */
+/* Cooking timers                                                      */
+/* ------------------------------------------------------------------ */
+
+const TIMER_STRINGS = {
+  sv: {
+    start: (d) => `Starta timer ${d}`,
+    pause: "Pausa",
+    resume: "Fortsätt",
+    cancel: "Avbryt timern",
+    dismiss: "Stäng av",
+    addMinute: "+1 min",
+    finished: "Klar!",
+    done: "Klar",
+    paused: "Pausad",
+    timers: "Timers",
+  },
+  en: {
+    start: (d) => `Start timer ${d}`,
+    pause: "Pause",
+    resume: "Resume",
+    cancel: "Cancel timer",
+    dismiss: "Dismiss",
+    addMinute: "+1 min",
+    finished: "Done!",
+    done: "Done",
+    paused: "Paused",
+    timers: "Timers",
+  },
+};
+
+const TIME_WORDS = {
+  en: 1, ett: 1, "två": 2, tre: 3, fyra: 4, fem: 5, sex: 6, sju: 7, "åtta": 8, nio: 9, tio: 10,
+  elva: 11, tolv: 12, femton: 15, tjugo: 20, trettio: 30, fyrtio: 40, femtio: 50,
+  one: 1, a: 1, an: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8,
+  nine: 9, ten: 10, twelve: 12, fifteen: 15, twenty: 20, thirty: 30, forty: 40, fifty: 50,
+};
+const UNIT_HOURS = "timmar|timmen|timme|tim|hours|hour|hrs|hr|h";
+const UNIT_MINUTES = "minuterna|minuter|minuten|minut|min|minutes|minute|mins";
+const UNIT_SECONDS = "sekunder|sekund|sek|seconds|second|secs|sec";
+const TIME_RE = (() => {
+  const words = Object.keys(TIME_WORDS).sort((a, b) => b.length - a.length).join("|");
+  const num = `(\\d+(?:[.,]\\d+)?(?:\\s*½)?|½|${words})`;
+  const end = "(?![\\p{L}\\d])";
+  const main =
+    `(?<![\\p{L}\\d])${num}(?:\\s*(?:-|–|—|till|to|or|eller)\\s*${num})?` +
+    `\\s*(${UNIT_HOURS}|${UNIT_MINUTES}|${UNIT_SECONDS})${end}` +
+    `(?:\\s*(?:och|and|,)?\\s*(\\d+)\\s*(?:${UNIT_MINUTES})${end})?`;
+  const special = `(?<![\\p{L}\\d])(?:(?:en|ett)\\s+)?(halvtimme|halvtimma|kvart|half an hour|half hour)${end}`;
+  return new RegExp(`${main}|${special}`, "giu");
+})();
+
+function parseTimeNumber(text) {
+  if (!text) return null;
+  const word = TIME_WORDS[text.toLowerCase()];
+  if (word !== undefined) return word;
+  const half = text.includes("½");
+  const digits = text.replace("½", "").replace(",", ".").trim();
+  const value = (digits ? parseFloat(digits) : 0) + (half ? 0.5 : 0);
+  return Number.isFinite(value) ? value : null;
+}
+
+function unitSeconds(unit) {
+  const u = unit.toLowerCase();
+  if (new RegExp(`^(?:${UNIT_HOURS})$`).test(u)) return 3600;
+  if (new RegExp(`^(?:${UNIT_SECONDS})$`).test(u)) return 1;
+  return 60;
+}
+
+/** The sentence or clause around a match, for the timer's label. */
+function clauseAround(text, start, end, stops = /[.!?;:\n]/) {
+  let from = start;
+  while (from > 0 && !stops.test(text[from - 1])) from--;
+  let to = end;
+  while (to < text.length && !stops.test(text[to])) to++;
+  let clause = text.slice(from, to).trim();
+  if (clause.length > 60) clause = `${clause.slice(0, 57).trimEnd()}…`;
+  return clause.charAt(0).toUpperCase() + clause.slice(1);
+}
+
+/**
+ * Each step's cooking times, with labels that are unique within the recipe
+ * (the labels name the timers).
+ */
+function recipeDurations(steps) {
+  const parsed = steps.map((step) => parseDurations(step));
+  const all = parsed.flat();
+  const shared = new Set(all.map((f) => f.label).filter((label, i, labels) => labels.indexOf(label) !== i));
+  for (const found of all) if (shared.has(found.label)) found.label = found.short;
+  const seen = new Map();
+  for (const found of all) {
+    const n = (seen.get(found.label) || 0) + 1;
+    seen.set(found.label, n);
+    if (n > 1) found.label = `${found.label} (${n})`;
+  }
+  return parsed;
+}
+
+/**
+ * Find cooking times in a recipe step: "10 min", "25–30 minuter",
+ * "1 timme och 15 minuter", "1 ½ h", "en kvart", "half an hour".
+ * Returns [{ index, length, seconds, maxSeconds, label }].
+ */
+function parseDurations(text) {
+  const found = [];
+  if (!text) return found;
+  TIME_RE.lastIndex = 0;
+  let match;
+  while ((match = TIME_RE.exec(text))) {
+    let seconds;
+    let maxSeconds = null;
+    if (match[5]) {
+      seconds = /kvart/i.test(match[5]) ? 900 : 1800;
+    } else {
+      const unit = unitSeconds(match[3]);
+      const low = parseTimeNumber(match[1]);
+      const high = parseTimeNumber(match[2]);
+      const extra = match[4] ? parseInt(match[4], 10) * 60 : 0;
+      if (low === null) continue;
+      seconds = Math.round(low * unit + extra);
+      if (high !== null && high > low) maxSeconds = Math.round(high * unit + extra);
+    }
+    if (seconds < 5 || seconds > 86400) continue;
+    found.push({
+      index: match.index,
+      length: match[0].length,
+      seconds,
+      maxSeconds,
+      label: clauseAround(text, match.index, match.index + match[0].length),
+      // Shorter, for when two times share a sentence ("bryn 3 min, sjud 15 min").
+      short: clauseAround(text, match.index, match.index + match[0].length, /[.!?;:\n,]/),
+    });
+  }
+  return found;
+}
+
+/** "10 min", "1 h 15 min", "30 s". */
+function formatDuration(seconds) {
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = Math.round(seconds % 60);
+  const parts = [];
+  if (h) parts.push(`${h} h`);
+  if (m) parts.push(`${m} min`);
+  if (s && !h) parts.push(`${s} s`);
+  return parts.join(" ") || "0 s";
+}
+
+/** "1:05:09" or "7:42". */
+function formatCountdown(seconds) {
+  const total = Math.max(0, Math.ceil(seconds));
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const s = String(total % 60).padStart(2, "0");
+  return h ? `${h}:${String(m).padStart(2, "0")}:${s}` : `${m}:${s}`;
+}
+
+/**
+ * One subscription to the integration's timers per page, shared by the
+ * timer bars and the recipe view. Counts down against the server's clock,
+ * and rings on this device when a timer finishes while the page is open.
+ */
+const timerHub = {
+  hass: null,
+  timers: [],
+  offset: 0,
+  listeners: new Set(),
+  _unsub: null,
+  _subscribing: false,
+  _statuses: null,
+  _ringing: new Set(),
+  _ticker: null,
+  _audio: null,
+  _ringLoop: null,
+
+  connect(hass) {
+    if (!hass) return;
+    this.hass = hass;
+    if (!this._unsub && !this._subscribing) this._subscribe();
+  },
+
+  async _subscribe() {
+    this._subscribing = true;
+    try {
+      this._unsub = await this.hass.connection.subscribeMessage(
+        (msg) => this._receive(msg),
+        { type: `${DOMAIN}/timers/subscribe` }
+      );
+    } catch (_err) {
+      /* integration not loaded: no timers */
+    } finally {
+      this._subscribing = false;
+    }
+  },
+
+  _receive(msg) {
+    const now = Date.parse(msg.now);
+    if (Number.isFinite(now)) this.offset = now - Date.now();
+    this.timers = msg.timers || [];
+    const statuses = new Map(this.timers.map((timer) => [timer.id, timer.status]));
+    if (this._statuses) {
+      for (const timer of this.timers) {
+        const before = this._statuses.get(timer.id);
+        if (timer.status === "finished" && before && before !== "finished") this._ringing.add(timer.id);
+      }
+    }
+    for (const id of [...this._ringing]) if (statuses.get(id) !== "finished") this._ringing.delete(id);
+    this._statuses = statuses;
+    this._updateTicker();
+    this._updateRinging();
+    this._notify();
+  },
+
+  _notify() {
+    for (const listener of [...this.listeners]) listener();
+  },
+
+  subscribe(listener) {
+    this.listeners.add(listener);
+    this._updateTicker();
+    return () => {
+      this.listeners.delete(listener);
+      this._updateTicker();
+    };
+  },
+
+  _updateTicker() {
+    const needed = this.listeners.size && this.timers.some((timer) => timer.status === "running");
+    if (needed && !this._ticker) {
+      this._ticker = setInterval(() => this._notify(), 1000);
+    } else if (!needed && this._ticker) {
+      clearInterval(this._ticker);
+      this._ticker = null;
+    }
+  },
+
+  remaining(timer) {
+    if (timer.status === "paused") return timer.remaining || 0;
+    if (timer.status !== "running" || !timer.ends_at) return 0;
+    return Math.max(0, (Date.parse(timer.ends_at) - (Date.now() + this.offset)) / 1000);
+  },
+
+  isRinging(timer) {
+    return this._ringing.has(timer.id);
+  },
+
+  /** Sorted for display: finished first, then soonest. */
+  sorted() {
+    return [...this.timers].sort(
+      (a, b) =>
+        (a.status === "finished" ? 0 : 1) - (b.status === "finished" ? 0 : 1) ||
+        this.remaining(a) - this.remaining(b)
+    );
+  },
+
+  async call(service, data) {
+    this.unlockAudio();
+    const result = await this.hass.callWS({
+      type: "call_service",
+      domain: DOMAIN,
+      service,
+      service_data: data,
+      ...(service === "start_timer" ? { return_response: true } : {}),
+    });
+    return result?.response;
+  },
+
+  start(seconds, label, recipeUid) {
+    return this.call("start_timer", {
+      duration: { seconds: Math.round(seconds) },
+      label,
+      ...(recipeUid ? { recipe: recipeUid } : {}),
+    });
+  },
+
+  silence(timer) {
+    this._ringing.delete(timer.id);
+    this._updateRinging();
+  },
+
+  // Browsers only allow sound after the user has touched the page.
+  unlockAudio() {
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    if (!Ctx) return;
+    try {
+      if (!this._audio) this._audio = new Ctx();
+      if (this._audio.state === "suspended") this._audio.resume();
+    } catch (_err) {
+      this._audio = null;
+    }
+  },
+
+  _updateRinging() {
+    if (this._ringing.size && !this._ringLoop) {
+      const started = Date.now();
+      const ring = () => {
+        if (!this._ringing.size || Date.now() - started > 120000) {
+          clearInterval(this._ringLoop);
+          this._ringLoop = null;
+          return;
+        }
+        this._beep();
+      };
+      ring();
+      this._ringLoop = setInterval(ring, 2500);
+    } else if (!this._ringing.size && this._ringLoop) {
+      clearInterval(this._ringLoop);
+      this._ringLoop = null;
+    }
+  },
+
+  _beep() {
+    if (navigator.vibrate) navigator.vibrate([300, 150, 300]);
+    const ctx = this._audio;
+    if (!ctx || ctx.state !== "running") return;
+    for (let i = 0; i < 3; i++) {
+      const at = ctx.currentTime + i * 0.3;
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = "sine";
+      osc.frequency.value = 880;
+      gain.gain.setValueAtTime(0.0001, at);
+      gain.gain.exponentialRampToValueAtTime(0.4, at + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, at + 0.22);
+      osc.connect(gain).connect(ctx.destination);
+      osc.start(at);
+      osc.stop(at + 0.25);
+    }
+  },
+};
+document.addEventListener("pointerdown", () => timerHub.unlockAudio(), { capture: true });
+
+/**
+ * The running timers, with pause, +1 min and cancel. Hidden when there are
+ * none. Used under the dashboard tabs and floating in the recipe view.
+ */
+class FoodPlanningTimers extends HTMLElement {
+  constructor() {
+    super();
+    this.attachShadow({ mode: "open" });
+    this._rows = new Map();
+    this._language = "sv";
+  }
+
+  set language(value) {
+    this._language = value;
+    this._render();
+  }
+
+  set hass(hass) {
+    timerHub.connect(hass);
+  }
+
+  connectedCallback() {
+    this._unsub = timerHub.subscribe(() => this._update());
+    this._render();
+  }
+
+  disconnectedCallback() {
+    if (this._unsub) this._unsub();
+    this._unsub = null;
+  }
+
+  _update() {
+    // Re-render when the set of timers or their states change; otherwise
+    // only the countdowns (keeps buttons stable under the finger).
+    const key = timerHub
+      .sorted()
+      .map((timer) => `${timer.id}:${timer.status}:${timerHub.isRinging(timer)}`)
+      .join("|");
+    if (key !== this._key) {
+      this._render();
+      return;
+    }
+    for (const timer of timerHub.timers) {
+      const row = this._rows.get(timer.id);
+      if (row && timer.status === "running") row.time.textContent = formatCountdown(timerHub.remaining(timer));
+    }
+  }
+
+  _render() {
+    const t = TIMER_STRINGS[this._language] || TIMER_STRINGS.sv;
+    const timers = timerHub.sorted();
+    this._key = timers.map((timer) => `${timer.id}:${timer.status}:${timerHub.isRinging(timer)}`).join("|");
+    this._rows.clear();
+    this.toggleAttribute("hidden", !timers.length);
+    const list = el("div", { cls: "list", attrs: { role: "list", "aria-label": t.timers } });
+    for (const timer of timers) {
+      const finished = timer.status === "finished";
+      const time = el("span", {
+        cls: "time",
+        text: finished ? t.finished : formatCountdown(timerHub.remaining(timer)),
+      });
+      const buttons = el("span", { cls: "buttons" });
+      const button = (icon, fallback, label, onClick) => {
+        const b = cornerButton(icon, fallback, label);
+        b.addEventListener("click", async () => {
+          b.disabled = true;
+          try {
+            await onClick();
+          } catch (_err) {
+            b.disabled = false;
+          }
+        });
+        buttons.append(b);
+      };
+      if (timer.status === "running") {
+        button("mdi:pause", "⏸", t.pause, () => timerHub.call("pause_timer", { timer: timer.id }));
+      } else if (timer.status === "paused") {
+        button("mdi:play", "▶", t.resume, () => timerHub.call("resume_timer", { timer: timer.id }));
+      }
+      const plus = el("button", { cls: "plus", text: t.addMinute, attrs: { type: "button" } });
+      plus.addEventListener("click", () =>
+        timerHub.call("extend_timer", { timer: timer.id, duration: { seconds: 60 } })
+      );
+      buttons.append(plus);
+      button(
+        finished ? "mdi:bell-off" : "mdi:close",
+        finished ? "🔕" : "✕",
+        finished ? t.dismiss : t.cancel,
+        () => {
+          timerHub.silence(timer);
+          return timerHub.call("cancel_timer", { timer: timer.id });
+        }
+      );
+      const row = el(
+        "div",
+        {
+          cls: `row ${timer.status} ${timerHub.isRinging(timer) ? "ringing" : ""}`,
+          attrs: { role: "listitem" },
+        },
+        el("span", { cls: "icon", text: finished ? "⏰" : timer.status === "paused" ? "⏸" : "⏱" }),
+        el(
+          "span",
+          { cls: "what" },
+          el("span", { cls: "label", text: timer.label }),
+          timer.recipe && timer.recipe !== timer.label
+            ? el("span", { cls: "recipe", text: timer.recipe })
+            : null
+        ),
+        time,
+        buttons
+      );
+      // Tapping a ringing timer silences it on this device.
+      if (timerHub.isRinging(timer)) row.addEventListener("click", () => timerHub.silence(timer));
+      this._rows.set(timer.id, { time });
+      list.append(row);
+    }
+    const style = el("style", {
+      text: `
+      :host { display: block; }
+      :host([hidden]) { display: none; }
+      .list { display: flex; flex-direction: column; gap: 6px; }
+      .row {
+        display: flex; align-items: center; gap: 10px; padding: 8px 8px 8px 14px;
+        border-radius: 999px; background: var(--card-background-color, #fff);
+        color: var(--primary-text-color); border: 1px solid var(--divider-color);
+        box-shadow: var(--ha-card-box-shadow, 0 2px 8px rgba(0, 0, 0, 0.15));
+      }
+      .row.paused { opacity: 0.75; }
+      .row.finished { border-color: var(--primary-color); }
+      .row.ringing { animation: pulse 1s ease-in-out infinite; background: var(--primary-color); color: var(--text-primary-color, #fff); }
+      @keyframes pulse { 50% { transform: scale(1.02); filter: brightness(1.15); } }
+      .icon { font-size: 18px; }
+      .what { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+      .label { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .recipe { font-size: 12px; opacity: 0.7; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .time { font-variant-numeric: tabular-nums; font-size: 20px; font-weight: 600; }
+      .buttons { display: flex; gap: 4px; align-items: center; }
+      button {
+        font: inherit; cursor: pointer; border: none; color: inherit;
+        background: rgba(127, 127, 127, 0.15);
+      }
+      .buttons button:not(.plus) {
+        width: 36px; height: 36px; padding: 0; border-radius: 50%;
+        display: flex; align-items: center; justify-content: center;
+      }
+      .plus { padding: 8px 10px; border-radius: 999px; font-size: 13px; white-space: nowrap; }
+      button:disabled { opacity: 0.5; }
+      ha-icon { --mdc-icon-size: 20px; }
+      @media (max-width: 420px) { .plus { display: none; } }
+    `,
+    });
+    this.shadowRoot.replaceChildren(style, list);
+  }
+}
+
+if (!customElements.get("food-planning-timers")) {
+  customElements.define("food-planning-timers", FoodPlanningTimers);
+}
+
 /** Round icon button for the recipe view's corner; HA's mdi icon if available. */
 function cornerButton(icon, fallback, label) {
   const button = el("button", { attrs: { type: "button", "aria-label": label, title: label } });
@@ -521,18 +1014,98 @@ class FoodPlanningRecipeDialog extends HTMLElement {
     this._t = t;
     this._uid = uid;
     this._onClose = onClose;
+    this._doneChips = new Set();
+    timerHub.connect(hass);
     this.update(recipes, categories);
   }
 
   connectedCallback() {
     document.addEventListener("keydown", this._onKey);
     document.addEventListener("visibilitychange", this._onVisibility);
+    this._unsubTimers = timerHub.subscribe(() => this._updateChips());
   }
 
   disconnectedCallback() {
     document.removeEventListener("keydown", this._onKey);
     document.removeEventListener("visibilitychange", this._onVisibility);
+    if (this._unsubTimers) this._unsubTimers();
+    this._unsubTimers = null;
     this._stopCooking();
+  }
+
+  /** A step's text with each cooking time turned into a timer chip. */
+  _stepNodes(text, durations) {
+    const nodes = [];
+    let pos = 0;
+    for (const found of durations) {
+      if (found.index > pos) nodes.push(document.createTextNode(text.slice(pos, found.index)));
+      const original = text.slice(found.index, found.index + found.length);
+      const label = found.label;
+      const button = el("button", { cls: "chip", attrs: { type: "button" } });
+      const chip = { button, label, original, seconds: found.seconds };
+      button.addEventListener("click", () => this._chipClicked(chip));
+      this._chips.push(chip);
+      nodes.push(button);
+      pos = found.index + found.length;
+    }
+    if (pos < text.length) nodes.push(document.createTextNode(text.slice(pos)));
+    return nodes;
+  }
+
+  _chipTimer(chip) {
+    return timerHub.timers.find((timer) => timer.recipe_uid === this._uid && timer.label === chip.label);
+  }
+
+  async _chipClicked(chip) {
+    const timer = this._chipTimer(chip);
+    try {
+      if (!timer) {
+        await timerHub.start(chip.seconds, chip.label, this._uid);
+      } else if (timer.status === "running") {
+        await timerHub.call("pause_timer", { timer: timer.id });
+      } else if (timer.status === "paused") {
+        await timerHub.call("resume_timer", { timer: timer.id });
+      } else {
+        timerHub.silence(timer);
+        await timerHub.call("cancel_timer", { timer: timer.id });
+      }
+    } catch (err) {
+      this._setStatus(errorMessage(err), true);
+    }
+  }
+
+  /** Show each chip's timer: idle, counting down, paused or done. */
+  _updateChips() {
+    const tt = TIMER_STRINGS[this._t.lang] || TIMER_STRINGS.sv;
+    for (const chip of this._chips || []) {
+      const timer = this._chipTimer(chip);
+      if (timer?.status === "finished") this._doneChips.add(chip.label);
+      let text;
+      let state = "";
+      let label;
+      if (!timer) {
+        const done = this._doneChips.has(chip.label);
+        text = `${done ? "✓" : "⏱"} ${chip.original}`;
+        state = done ? "done" : "";
+        label = tt.start(formatDuration(chip.seconds));
+      } else if (timer.status === "running") {
+        text = `⏱ ${formatCountdown(timerHub.remaining(timer))}`;
+        state = "running";
+        label = tt.pause;
+      } else if (timer.status === "paused") {
+        text = `⏸ ${formatCountdown(timerHub.remaining(timer))}`;
+        state = "paused";
+        label = tt.resume;
+      } else {
+        text = `⏰ ${tt.finished}`;
+        state = "finished";
+        label = tt.dismiss;
+      }
+      if (chip.button.textContent !== text) chip.button.textContent = text;
+      chip.button.className = `chip ${state}`;
+      chip.button.setAttribute("aria-label", `${label}: ${chip.label}`);
+      chip.button.title = label;
+    }
   }
 
   async _requestWakeLock() {
@@ -614,6 +1187,22 @@ class FoodPlanningRecipeDialog extends HTMLElement {
         border-radius: var(--fp-radius); box-shadow: 0 10px 40px rgba(0, 0, 0, 0.4);
         font-family: var(--paper-font-body1_-_font-family, inherit);
       }
+      .backdrop { padding-bottom: 140px; }
+      food-planning-timers.floating {
+        position: fixed; z-index: 1; left: 50%; bottom: 16px; transform: translateX(-50%);
+        width: min(560px, calc(100% - 32px));
+      }
+      button.chip {
+        display: inline-flex; align-items: center; padding: 1px 10px; margin: 0 2px;
+        border-radius: 999px; font-size: 0.95em; line-height: 1.5; white-space: nowrap;
+        background: transparent; color: var(--primary-color);
+        border: 1px solid var(--primary-color); font-variant-numeric: tabular-nums;
+      }
+      button.chip.running, button.chip.finished { background: var(--primary-color); color: var(--text-primary-color, #fff); }
+      button.chip.paused { border-style: dashed; }
+      button.chip.done { color: var(--success-color, #43a047); border-color: var(--success-color, #43a047); }
+      button.chip.finished { animation: chip-pulse 1s ease-in-out infinite; }
+      @keyframes chip-pulse { 50% { filter: brightness(1.2); } }
       .hero { width: 100%; max-height: 360px; aspect-ratio: 16 / 9; object-fit: cover; display: block; }
       .corner { position: absolute; top: 12px; right: 12px; display: flex; gap: 8px; }
       .corner button {
@@ -729,6 +1318,12 @@ class FoodPlanningRecipeDialog extends HTMLElement {
       el("div", { cls: "content" }, ...content)
     );
     const backdrop = el("div", { cls: "backdrop" }, panel);
+    if (!this._editing) {
+      const timers = document.createElement("food-planning-timers");
+      timers.className = "floating";
+      timers.language = t.lang || "sv";
+      backdrop.append(timers);
+    }
     backdrop.addEventListener("click", (ev) => {
       if (ev.target === backdrop && !this._editing) this.close();
     });
@@ -806,10 +1401,16 @@ class FoodPlanningRecipeDialog extends HTMLElement {
       ingredients
     );
     const right = el("section", {});
+    this._chips = [];
     if (recipe.steps.length) {
+      const durations = recipeDurations(recipe.steps);
       right.append(
         el("h3", { text: t.steps }),
-        el("ol", { cls: "steps" }, ...recipe.steps.map((s) => el("li", { text: s })))
+        el(
+          "ol",
+          { cls: "steps" },
+          ...recipe.steps.map((step, i) => el("li", {}, ...this._stepNodes(step, durations[i])))
+        )
       );
     }
     if (recipe.notes) {
@@ -860,6 +1461,7 @@ class FoodPlanningRecipeDialog extends HTMLElement {
       actions,
       this._status
     );
+    this._updateChips();
   }
 
   _renderEdit() {
@@ -1041,14 +1643,18 @@ class FoodPlanningNav extends HTMLElement {
     this._render();
   }
 
-  set hass(_hass) {}
+  set hass(hass) {
+    this._hass = hass;
+    if (this._timers) this._timers.hass = hass;
+  }
 
   getCardSize() {
     return 1;
   }
 
   getGridOptions() {
-    return { columns: "full", rows: 1 };
+    // No fixed height: the running timers show under the tabs.
+    return { columns: "full" };
   }
 
   _render() {
@@ -1082,10 +1688,14 @@ class FoodPlanningNav extends HTMLElement {
         padding: 10px 12px; background: transparent; color: var(--primary-text-color);
       }
       button.active { background: var(--primary-color); color: var(--text-primary-color, #fff); }
+      food-planning-timers { margin-top: 8px; }
       @media (max-width: 420px) { .icon { display: none; } }
     `,
     });
-    this.shadowRoot.replaceChildren(style, nav);
+    this._timers = document.createElement("food-planning-timers");
+    this._timers.language = this._config.language || "sv";
+    if (this._hass) this._timers.hass = this._hass;
+    this.shadowRoot.replaceChildren(style, nav, this._timers);
   }
 }
 

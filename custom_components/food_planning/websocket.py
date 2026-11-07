@@ -9,6 +9,7 @@ import voluptuous as vol
 from homeassistant.components import websocket_api
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.util import dt as dt_util
 
 from .const import CONF_UPDATE_PANTRY, DEFAULT_UPDATE_PANTRY, DOMAIN
 from .data import FoodPlanningConfigEntry, async_delete_recipe
@@ -24,6 +25,7 @@ def async_setup_websocket(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, ws_delete_recipe)
     websocket_api.async_register_command(hass, ws_update_recipe)
     websocket_api.async_register_command(hass, ws_mark_cooked)
+    websocket_api.async_register_command(hass, ws_subscribe_timers)
 
 
 def _loaded_entry(hass: HomeAssistant) -> FoodPlanningConfigEntry | None:
@@ -191,3 +193,39 @@ async def ws_mark_cooked(
             async_consume_recipe(hass, entry, recipe),
             "food_planning pantry update",
         )
+
+
+@websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/timers/subscribe"})
+@callback
+def ws_subscribe_timers(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Send the timers now and after every change.
+
+    "now" is the server's clock, so the dashboards count down to "ends_at"
+    correctly even if the device's clock is off.
+    """
+    entry = _loaded_entry(hass)
+    if entry is None:
+        connection.send_error(msg["id"], "not_loaded", "Food Planning is not loaded")
+        return
+    manager = entry.runtime_data.timers
+
+    @callback
+    def send_timers() -> None:
+        now = dt_util.utcnow()
+        connection.send_message(
+            websocket_api.event_message(
+                msg["id"],
+                {
+                    "now": now.isoformat(),
+                    "timers": [t.as_json(now) for t in manager.timers],
+                },
+            )
+        )
+
+    connection.subscriptions[msg["id"]] = manager.async_add_listener(send_timers)
+    connection.send_result(msg["id"])
+    send_timers()

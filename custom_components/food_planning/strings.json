@@ -49,6 +49,38 @@
       "pantry": {
         "name": "At home"
       }
+    },
+    "event": {
+      "timer": {
+        "name": "Cooking timer",
+        "state_attributes": {
+          "event_type": {
+            "state": {
+              "started": "Started",
+              "paused": "Paused",
+              "resumed": "Resumed",
+              "finished": "Finished",
+              "cancelled": "Cancelled"
+            }
+          }
+        }
+      }
+    },
+    "sensor": {
+      "next_timer": {
+        "name": "Next timer",
+        "state_attributes": {
+          "label": {
+            "name": "Label"
+          },
+          "recipe": {
+            "name": "Recipe"
+          },
+          "timers": {
+            "name": "Timers"
+          }
+        }
+      }
     }
   },
   "services": {
@@ -91,6 +123,68 @@
     "move_bought_to_pantry": {
       "name": "Move bought items home",
       "description": "Moves ticked-off items from the shopping list to the At home list. Duplicates are then merged by the AI."
+    },
+    "start_timer": {
+      "name": "Start cooking timer",
+      "description": "Starts a cooking timer. It shows on the Food Planning dashboards, and the Cooking timer event fires when it finishes.",
+      "fields": {
+        "duration": {
+          "name": "Duration",
+          "description": "How long the timer runs."
+        },
+        "label": {
+          "name": "Label",
+          "description": "What the timer is for, e.g. \"Boil the pasta\"."
+        },
+        "recipe": {
+          "name": "Recipe",
+          "description": "Recipe title or ID the timer belongs to."
+        }
+      }
+    },
+    "pause_timer": {
+      "name": "Pause cooking timer",
+      "description": "Pauses running cooking timers.",
+      "fields": {
+        "timer": {
+          "name": "Timer",
+          "description": "Timer ID or label. Leave empty for all timers."
+        }
+      }
+    },
+    "resume_timer": {
+      "name": "Resume cooking timer",
+      "description": "Continues paused cooking timers.",
+      "fields": {
+        "timer": {
+          "name": "Timer",
+          "description": "Timer ID or label. Leave empty for all timers."
+        }
+      }
+    },
+    "cancel_timer": {
+      "name": "Cancel cooking timer",
+      "description": "Stops and removes cooking timers, or dismisses finished ones.",
+      "fields": {
+        "timer": {
+          "name": "Timer",
+          "description": "Timer ID or label. Leave empty for all timers."
+        }
+      }
+    },
+    "extend_timer": {
+      "name": "Add time to cooking timer",
+      "description": "Adds time to cooking timers. A finished timer starts again.",
+      "fields": {
+        "timer": {
+          "name": "Timer",
+          "description": "Timer ID or label. Leave empty for all timers."
+        },
+        "duration": {
+          "name": "Time to add",
+          "description": "How much time to add."
+        }
+      }
     }
   },
   "exceptions": {
@@ -123,6 +217,9 @@
     },
     "item_not_found": {
       "message": "Item {uid} was not found."
+    },
+    "timer_not_found": {
+      "message": "No cooking timer matches \"{timer}\"."
     }
   }
 }
