@@ -29,7 +29,18 @@ const STRINGS = {
     filterQuick: "⚡ Max 30 min",
     allCategories: "Alla kategorier",
     fieldCategories: "Kategorier",
-    categoriesHint: "Kategorierna hanteras under Inställningar → Enheter och tjänster → Food Planning → Konfigurera.",
+    categoriesHint: "Ändra själva listan med ✎ Kategorier ovanför recepten.",
+    editCategories: "✎ Kategorier",
+    catTitle: "Kategorier",
+    catNew: "Ny kategori",
+    catAdd: "Lägg till",
+    catRemove: "Ta bort",
+    catSave: "Spara",
+    catSaveSort: "Spara och sortera om alla recept",
+    catSortHint: "Sortera om låter AI:n välja kategorier på nytt för alla recept, även de du har satt själv.",
+    catSaved: "Kategorierna är sparade.",
+    catSorting: "Sorterar om recepten… det tar en stund.",
+    catSorted: (n) => (n ? `Klart. ${n} ${n === 1 ? "recept" : "recept"} fick nya kategorier.` : "Klart. Inga recept behövde ändras."),
     missingBadge: (n) => `Saknar ${n}`,
     notAtHome: "saknas hemma",
     ready: "✓ Redo att laga",
@@ -88,7 +99,18 @@ const STRINGS = {
     filterQuick: "⚡ 30 min or less",
     allCategories: "All categories",
     fieldCategories: "Categories",
-    categoriesHint: "Manage categories under Settings → Devices & services → Food Planning → Configure.",
+    categoriesHint: "Change the list itself with ✎ Categories above the recipes.",
+    editCategories: "✎ Categories",
+    catTitle: "Categories",
+    catNew: "New category",
+    catAdd: "Add",
+    catRemove: "Remove",
+    catSave: "Save",
+    catSaveSort: "Save and re-sort all recipes",
+    catSortHint: "Re-sort has the AI pick categories again for every recipe, including ones you set yourself.",
+    catSaved: "Categories saved.",
+    catSorting: "Re-sorting the recipes… this takes a moment.",
+    catSorted: (n) => (n ? `Done. ${n} ${n === 1 ? "recipe" : "recipes"} got new categories.` : "Done. No recipes needed changing."),
     missingBadge: (n) => `Missing ${n}`,
     notAtHome: "not at home",
     ready: "✓ Ready to cook",
@@ -395,6 +417,21 @@ class FoodPlanningCard extends HTMLElement {
         background: var(--cat); color: #fff; border-color: transparent;
       }
       .chip.cat.active.dot::before { background: #fff; }
+      .chip.edit { border-style: dashed; color: var(--secondary-text-color); }
+      .cat-editor {
+        margin-top: 10px; padding: 12px; border-radius: var(--fp-radius);
+        border: 1px solid var(--divider-color); background: var(--secondary-background-color);
+      }
+      .cat-editor h2 { margin: 0 0 8px; font-size: 15px; font-weight: 500; }
+      .cat-editor .rows { display: grid; gap: 6px; }
+      .cat-editor .crow { display: flex; gap: 6px; align-items: center; }
+      .cat-editor .crow .cat { flex: none; min-width: 1.6em; justify-content: center; }
+      .cat-editor .crow input { flex: 1; padding: 6px 10px; }
+      .cat-editor .crow button { padding: 6px 10px; flex: none; }
+      .cat-editor .add-row { display: flex; gap: 6px; margin-top: 10px; }
+      .cat-editor .add-row input { flex: 1; padding: 6px 10px; }
+      .cat-editor .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+      .cat-editor .hint { font-size: 12px; color: var(--secondary-text-color); margin: 8px 0 0; }
       .empty { margin: 16px 0 0; color: var(--secondary-text-color); }
     `,
     });
@@ -490,8 +527,10 @@ class FoodPlanningCard extends HTMLElement {
     if (!this._categoryChips) return;
     const used = new Set((this._recipes || []).flatMap((r) => r.categories || []));
     const shown = this._categories.filter((c) => used.has(c));
+    const edit = el("button", { cls: "chip edit", text: this._t.editCategories });
+    edit.addEventListener("click", () => this._toggleCategoryEditor());
     if (!shown.length) {
-      this._categoryChips.replaceChildren();
+      this._categoryChips.replaceChildren(edit);
       return;
     }
     const chip = (label, value) => {
@@ -507,8 +546,109 @@ class FoodPlanningCard extends HTMLElement {
     };
     this._categoryChips.replaceChildren(
       chip(this._t.allCategories, null),
-      ...shown.map((c) => chip(c, c))
+      ...shown.map((c) => chip(c, c)),
+      edit
     );
+  }
+
+  _toggleCategoryEditor() {
+    if (this._catEditor) {
+      this._catEditor.remove();
+      this._catEditor = null;
+      return;
+    }
+    const t = this._t;
+    const rowsBox = el("div", { cls: "rows" });
+    const rows = [];
+    const addRow = (orig, value) => {
+      const input = el("input", { attrs: { type: "text", "aria-label": t.catTitle } });
+      input.value = value;
+      const preview = categoryLabel(value || "?");
+      preview.textContent = (CATEGORY_ICONS[value.toLowerCase()] || "").trim();
+      const remove = el("button", { cls: "secondary", text: "✕", attrs: { type: "button", title: t.catRemove, "aria-label": t.catRemove } });
+      const row = { orig, input, node: el("div", { cls: "crow" }, preview, input, remove) };
+      input.addEventListener("input", () => {
+        const name = input.value.trim();
+        preview.style.setProperty("--cat", categoryColor(name || "?"));
+        preview.textContent = (CATEGORY_ICONS[name.toLowerCase()] || "").trim();
+        preview.classList.toggle("dot", !CATEGORY_ICONS[name.toLowerCase()]);
+      });
+      remove.addEventListener("click", () => {
+        rows.splice(rows.indexOf(row), 1);
+        row.node.remove();
+      });
+      rows.push(row);
+      rowsBox.append(row.node);
+      return input;
+    };
+    for (const name of this._categories) addRow(name, name);
+
+    const newInput = el("input", { attrs: { type: "text", placeholder: t.catNew } });
+    const addButton = el("button", { cls: "secondary", text: t.catAdd, attrs: { type: "button" } });
+    const add = () => {
+      const name = newInput.value.trim();
+      if (!name) return;
+      addRow(null, name);
+      newInput.value = "";
+      newInput.focus();
+    };
+    addButton.addEventListener("click", add);
+    newInput.addEventListener("keydown", (ev) => {
+      if (ev.key === "Enter") {
+        ev.preventDefault();
+        add();
+      }
+    });
+
+    const status = el("p", { cls: "status", attrs: { hidden: "" } });
+    const setStatus = (text, isError = false) => {
+      status.textContent = text;
+      status.classList.toggle("error", isError);
+      status.toggleAttribute("hidden", !text);
+    };
+    const save = el("button", { text: t.catSave });
+    const saveSort = el("button", { cls: "secondary", text: t.catSaveSort });
+    const cancel = el("button", { cls: "secondary", text: t.cancel });
+    cancel.addEventListener("click", () => this._toggleCategoryEditor());
+    const submit = async (recategorize) => {
+      const categories = [];
+      const renames = {};
+      for (const row of rows) {
+        const name = row.input.value.trim();
+        if (!name) continue;
+        categories.push(name);
+        if (row.orig && row.orig !== name) renames[row.orig] = name;
+      }
+      for (const b of [save, saveSort, cancel]) b.disabled = true;
+      setStatus(recategorize ? t.catSorting : "");
+      try {
+        const result = await this._hass.callWS({
+          type: `${DOMAIN}/categories/set`,
+          categories,
+          renames,
+          recategorize,
+        });
+        this._toggleCategoryEditor();
+        this._setStatus(recategorize ? t.catSorted(result?.changed ?? 0) : t.catSaved);
+      } catch (err) {
+        setStatus(err?.code === "unauthorized" ? t.adminOnly : errorMessage(err), true);
+        for (const b of [save, saveSort, cancel]) b.disabled = false;
+      }
+    };
+    save.addEventListener("click", () => submit(false));
+    saveSort.addEventListener("click", () => submit(true));
+
+    this._catEditor = el(
+      "div",
+      { cls: "cat-editor" },
+      el("h2", { text: t.catTitle }),
+      rowsBox,
+      el("div", { cls: "add-row" }, newInput, addButton),
+      el("div", { cls: "actions" }, save, saveSort, cancel),
+      el("p", { cls: "hint", text: t.catSortHint }),
+      status
+    );
+    this._categoryChips.after(this._catEditor);
   }
 
   _renderGrid() {

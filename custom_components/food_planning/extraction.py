@@ -90,6 +90,12 @@ RECIPE_STRUCTURE: dict[str, Any] = {
     },
 }
 
+CATEGORY_RULES = """Choose by the kind of dish and when it's eaten, the way \
+a cookbook files it: a sweet dish eaten after a meal (cake, pie, mousse, ice \
+cream, panna cotta) is a dessert, not a snack; a snack is something small \
+eaten between meals; finger food for sharing (dips, olives, tapas) is finger \
+food, not a starter. Usually one or two; none if nothing fits."""
+
 INSTRUCTIONS = """Extract the recipe from the content below.
 
 - Write the title, ingredients, steps and notes in {language}.
@@ -100,10 +106,7 @@ INSTRUCTIONS = """Extract the recipe from the content below.
 - Keep the steps faithful to the source; do not invent quantities or steps.
 - Set total_minutes to the total time from start to served, including waiting, rising and baking: the time the source states (e.g. totalTime), or else your estimate from the steps.
 - Pick the categories that fit the dish from this list only: {categories}. \
-Choose by the kind of dish and when it's eaten, the way a cookbook files it: \
-a sweet dish eaten after a meal (cake, pie, mousse, ice cream, panna cotta) \
-is a dessert, not a snack; a snack is something small eaten between meals. \
-Usually one or two; none if nothing fits.
+{category_rules}
 - If the content does not contain a recipe, set is_recipe to false and \
 leave the other fields empty.
 
@@ -435,6 +438,7 @@ async def async_extract_recipe(
         instructions=INSTRUCTIONS.format(
             language=language,
             categories=", ".join(categories or []) or "(none)",
+            category_rules=CATEGORY_RULES,
             source=source.url or "text pasted by the user",
             content=content,
         ),

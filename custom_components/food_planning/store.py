@@ -362,11 +362,19 @@ class FoodPlanningStore:
                 result.append(match)
         return result
 
-    def set_categories(self, names: list[str]) -> None:
+    def set_categories(
+        self, names: list[str], renames: dict[str, str] | None = None
+    ) -> None:
         """Replace the category list; removed ones are taken off recipes.
 
-        A name that only changes case keeps its recipes.
+        renames maps old names to new ones, so recipes keep a renamed
+        category. A name that only changes case keeps its recipes too.
         """
+        renamed = {old.casefold(): new.strip() for old, new in (renames or {}).items()}
+        for recipe in self.recipes:
+            recipe.categories = [
+                renamed.get(c.casefold(), c) for c in recipe.categories
+            ]
         new: list[str] = []
         for name in names:
             if (name := name.strip()) and name.casefold() not in {

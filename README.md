@@ -113,10 +113,12 @@ type: custom:food-planning-card
   per line), tips and source link.
 - **Categories** (Middag, Efterrätt, Bakning, …) show as colored labels,
   with an icon for the common ones (🍰 Efterrätt, 🍽️ Middag, …). The AI
-  picks fitting ones from your list when importing; change them with ✎,
-  and filter by category in the card. Manage the list itself on the settings page
-  (Settings → Devices & services → Food Planning → Configure), one per
-  line. It starts with a default set.
+  picks fitting ones from your list when importing; change a recipe's with
+  ✎, and filter by category in the card. **✎ Kategorier** in the card
+  edits the list itself: rename (recipes keep the category), remove, add.
+  **Save and re-sort all recipes** then has the AI pick categories again
+  for every recipe, in one call per 25 recipes. The list is also on the
+  settings page (Configure), one per line.
 - **What's at home decides "ready to cook".** Every ingredient and At home
   item gets a short product name ("2 finhackade schalottenlökar" →
   "schalottenlök", "Parmesan, bit" → "parmesan"), and an ingredient is at
@@ -230,7 +232,7 @@ Finished timers stay (ringing) until dismissed, at most 15 minutes.
   administrator users can edit or delete recipes; everyone can still
   import, shop and cook.
 - **Recipe categories:** one per line. Removing one also takes it off the
-  recipes that had it.
+  recipes that had it. Easier from the recipe card's **✎ Kategorier**.
 
 All can be changed later under the integration's **Configure** button.
 

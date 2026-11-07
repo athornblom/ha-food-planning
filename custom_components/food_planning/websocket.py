@@ -9,9 +9,11 @@ import voluptuous as vol
 from homeassistant.components import websocket_api
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.util import dt as dt_util
 
+from .categorize import async_categorize_recipes
 from .const import (
     CONF_ADMIN_ONLY,
     CONF_UPDATE_PANTRY,
@@ -35,6 +37,7 @@ def async_setup_websocket(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, ws_update_recipe)
     websocket_api.async_register_command(hass, ws_mark_cooked)
     websocket_api.async_register_command(hass, ws_subscribe_timers)
+    websocket_api.async_register_command(hass, ws_set_categories)
 
 
 def _loaded_entry(hass: HomeAssistant) -> FoodPlanningConfigEntry | None:
@@ -285,3 +288,38 @@ def ws_subscribe_timers(
     )
     connection.send_result(msg["id"])
     send_timers()
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): f"{DOMAIN}/categories/set",
+        vol.Required("categories"): [vol.All(str, vol.Strip, vol.Length(min=1))],
+        vol.Optional("renames", default={}): {str: vol.All(str, vol.Strip)},
+        vol.Optional("recategorize", default=False): bool,
+    }
+)
+@websocket_api.async_response
+async def ws_set_categories(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Save the category list; optionally have the AI re-pick every recipe's."""
+    entry = _loaded_entry(hass)
+    if entry is None:
+        connection.send_error(msg["id"], "not_loaded", "Food Planning is not loaded")
+        return
+    if not _may_change_recipes(entry, connection, msg):
+        return
+    store = entry.runtime_data.store
+    store.set_categories(msg["categories"], msg["renames"])
+    await store.async_save()
+    changed = 0
+    if msg["recategorize"] and store.recipes:
+        try:
+            changed = await async_categorize_recipes(hass, entry, list(store.recipes))
+        except HomeAssistantError as err:
+            connection.send_error(msg["id"], "ai_failed", str(err))
+            return
+        await store.async_save()
+    connection.send_result(msg["id"], {"changed": changed})
