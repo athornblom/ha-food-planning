@@ -90,11 +90,9 @@ RECIPE_STRUCTURE: dict[str, Any] = {
     },
 }
 
-CATEGORY_RULES = """Choose by the kind of dish and when it's eaten, the way \
-a cookbook files it: a sweet dish eaten after a meal (cake, pie, mousse, ice \
-cream, panna cotta) is a dessert, not a snack; a snack is something small \
-eaten between meals; finger food for sharing (dips, olives, tapas) is finger \
-food, not a starter. Usually one or two; none if nothing fits."""
+CATEGORY_RULES = """Choose by what each category means (after the colon) \
+and by how the dish is served and eaten, the way a cookbook files it, not by \
+single ingredients. Usually one or two; none if nothing fits."""
 
 INSTRUCTIONS = """Extract the recipe from the content below.
 
@@ -105,8 +103,11 @@ INSTRUCTIONS = """Extract the recipe from the content below.
 "2 dl grädde"). Do not include section headings as ingredients.
 - Keep the steps faithful to the source; do not invent quantities or steps.
 - Set total_minutes to the total time from start to served, including waiting, rising and baking: the time the source states (e.g. totalTime), or else your estimate from the steps.
-- Pick the categories that fit the dish from this list only: {categories}. \
+- Pick the categories that fit the dish from this list only. \
 {category_rules}
+
+{categories}
+
 - If the content does not contain a recipe, set is_recipe to false and \
 leave the other fields empty.
 
@@ -419,7 +420,7 @@ async def async_extract_recipe(
     *,
     language: str,
     ai_task_entity: str | None,
-    categories: list[str] | None = None,
+    categories: str | None = None,
 ) -> ExtractedRecipe:
     """Ask the configured AI task entity to turn source text into a recipe."""
     content = source.text
@@ -437,7 +438,7 @@ async def async_extract_recipe(
         task_name="Food Planning recipe import",
         instructions=INSTRUCTIONS.format(
             language=language,
-            categories=", ".join(categories or []) or "(none)",
+            categories=categories or "(none)",
             category_rules=CATEGORY_RULES,
             source=source.url or "text pasted by the user",
             content=content,

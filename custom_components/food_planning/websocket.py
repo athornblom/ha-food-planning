@@ -142,6 +142,9 @@ def ws_subscribe_recipes(
                 {
                     "recipes": [_recipe_json(store, r) for r in store.recipes],
                     "categories": store.categories,
+                    "category_descriptions": {
+                        c: store.category_description(c) for c in store.categories
+                    },
                 },
             )
         )
@@ -295,6 +298,7 @@ def ws_subscribe_timers(
         vol.Required("type"): f"{DOMAIN}/categories/set",
         vol.Required("categories"): [vol.All(str, vol.Strip, vol.Length(min=1))],
         vol.Optional("renames", default={}): {str: vol.All(str, vol.Strip)},
+        vol.Optional("descriptions"): {str: vol.All(str, vol.Strip)},
         vol.Optional("recategorize", default=False): bool,
     }
 )
@@ -312,7 +316,7 @@ async def ws_set_categories(
     if not _may_change_recipes(entry, connection, msg):
         return
     store = entry.runtime_data.store
-    store.set_categories(msg["categories"], msg["renames"])
+    store.set_categories(msg["categories"], msg["renames"], msg.get("descriptions"))
     await store.async_save()
     changed = 0
     if msg["recategorize"] and store.recipes:

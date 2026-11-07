@@ -49,6 +49,43 @@ DEFAULT_CATEGORIES = {
     ],
 }
 
+# What each default category means, told to the AI so it picks well.
+# Keyed by lowercase name in both languages; users can write their own.
+_DESCRIPTIONS = {
+    ("frukost", "breakfast"): (
+        "Eaten in the morning: porridge, eggs, pancakes, yoghurt bowls."
+    ),
+    ("middag", "dinner"): "A main course for lunch or dinner.",
+    ("förrätt", "starter"): (
+        "A small plated dish served at the table before the main course."
+    ),
+    ("efterrätt", "dessert"): (
+        "A sweet dish served after a meal: cake, pie, mousse, ice cream."
+    ),
+    ("bakning", "baking"): (
+        "Baked from a dough or batter: bread, buns, cookies, cakes."
+    ),
+    ("plockmat", "finger food"): (
+        "Bites or small dishes put out to share and eat with the fingers, "
+        "often with drinks: dips, chips, nuts, olives, tapas, party or "
+        "movie-night snacks, savoury or sweet."
+    ),
+    ("mellanmål", "snack"): (
+        "A small everyday bite for one person between meals: a sandwich, "
+        "yoghurt, fruit, a smoothie. Not food put out to share."
+    ),
+    ("soppa", "soup"): "A soup or stew eaten with a spoon.",
+    ("sallad", "salad"): "A salad, as a meal or a side.",
+    ("vegetariskt", "vegetarian"): "Contains no meat, poultry or fish.",
+    ("matlåda", "lunch box"): (
+        "Keeps and reheats well: good to cook in bulk and take along."
+    ),
+    ("helg", "weekend"): ("Takes longer or is a bit fancier: for weekends and guests."),
+}
+DEFAULT_CATEGORY_DESCRIPTIONS = {
+    name: text for names, text in _DESCRIPTIONS.items() for name in names
+}
+
 # The two item lists: what to buy, and what's at home.
 SHOPPING = "shopping"
 PANTRY = "pantry"
@@ -171,6 +208,9 @@ class FoodPlanningStore:
         )
         self.recipes: list[Recipe] = []
         self.categories: list[str] = []
+        # Descriptions the user wrote, by category name; the defaults are
+        # in DEFAULT_CATEGORY_DESCRIPTIONS.
+        self.category_descriptions: dict[str, str] = {}
         # Item text (see name_key) -> product name, e.g. "2 finhackade
         # schalottenlökar" -> "schalottenlök". Filled by the AI once per new
         # text; recipes are matched against At home by product name.
@@ -199,6 +239,11 @@ class FoodPlanningStore:
             data.get("categories")
             or DEFAULT_CATEGORIES.get(default_language, DEFAULT_CATEGORIES["sv"])
         )
+        store.category_descriptions = {
+            k: v
+            for k, v in (data.get("category_descriptions") or {}).items()
+            if isinstance(k, str) and isinstance(v, str)
+        }
         store.recipes = [_from_dict(Recipe, r) for r in data.get("recipes", [])]
         store.names = {
             k: v
@@ -244,6 +289,7 @@ class FoodPlanningStore:
             {
                 "recipes": [asdict(r) for r in self.recipes],
                 "categories": self.categories,
+                "category_descriptions": self.category_descriptions,
                 "names": self.names,
                 **{
                     name: [asdict(i) for i in items]
@@ -369,8 +415,28 @@ class FoodPlanningStore:
                 result.append(match)
         return result
 
+    def category_description(self, name: str) -> str:
+        """What a category means: the user's text, or the default one."""
+        if (text := self.category_descriptions.get(name)) is not None:
+            return text
+        return DEFAULT_CATEGORY_DESCRIPTIONS.get(name.casefold(), "")
+
+    def describe_categories(self) -> str:
+        """The category list for an AI prompt, one per line with meanings."""
+        if not self.categories:
+            return "(none)"
+        return "\n".join(
+            f"- {name}: {text}"
+            if (text := self.category_description(name))
+            else f"- {name}"
+            for name in self.categories
+        )
+
     def set_categories(
-        self, names: list[str], renames: dict[str, str] | None = None
+        self,
+        names: list[str],
+        renames: dict[str, str] | None = None,
+        descriptions: dict[str, str] | None = None,
     ) -> None:
         """Replace the category list; removed ones are taken off recipes.
 
@@ -396,6 +462,21 @@ class FoodPlanningStore:
                 if c.casefold() in by_folded
             ]
         self.categories = new
+        # Keep descriptions of kept and renamed categories; store only the
+        # ones that differ from the default.
+        old_descriptions = self.category_descriptions
+        reverse = {v.casefold(): k for k, v in (renames or {}).items()}
+        result: dict[str, str] = {}
+        for name in new:
+            if descriptions is not None and name in descriptions:
+                text = " ".join(descriptions[name].split())
+            else:
+                old = reverse.get(name.casefold(), name)
+                if (text := old_descriptions.get(old)) is None:
+                    continue
+            if text != DEFAULT_CATEGORY_DESCRIPTIONS.get(name.casefold(), ""):
+                result[name] = text
+        self.category_descriptions = result
 
     def delete_recipe(self, uid: str) -> Recipe | None:
         """Delete a recipe and return it, or None if it didn't exist."""

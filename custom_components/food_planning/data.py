@@ -65,7 +65,7 @@ async def async_import_recipe(
         source,
         language=entry.options.get(CONF_LANGUAGE, DEFAULT_LANGUAGE),
         ai_task_entity=entry.options.get(CONF_AI_TASK_ENTITY),
-        categories=entry.runtime_data.store.categories,
+        categories=entry.runtime_data.store.describe_categories(),
     )
     recipe = Recipe(
         title=extracted.title,

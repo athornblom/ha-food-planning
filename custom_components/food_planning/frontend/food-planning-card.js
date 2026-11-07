@@ -33,11 +33,12 @@ const STRINGS = {
     editCategories: "✎ Kategorier",
     catTitle: "Kategorier",
     catNew: "Ny kategori",
+    catDescription: "Vad hör hit? T.ex. dipp, tapas, chips och annat att dela",
     catAdd: "Lägg till",
     catRemove: "Ta bort",
     catSave: "Spara",
     catSaveSort: "Spara och sortera om alla recept",
-    catSortHint: "Sortera om låter AI:n välja kategorier på nytt för alla recept, även de du har satt själv.",
+    catSortHint: "Beskrivningen talar om för AI:n vad som hör till kategorin. Sortera om låter AI:n välja kategorier på nytt för alla recept, även de du har satt själv.",
     catSaved: "Kategorierna är sparade.",
     catSorting: "Sorterar om recepten… det tar en stund.",
     catSorted: (n) => (n ? `Klart. ${n} ${n === 1 ? "recept" : "recept"} fick nya kategorier.` : "Klart. Inga recept behövde ändras."),
@@ -103,11 +104,12 @@ const STRINGS = {
     editCategories: "✎ Categories",
     catTitle: "Categories",
     catNew: "New category",
+    catDescription: "What belongs here? E.g. dips, tapas, chips and other food to share",
     catAdd: "Add",
     catRemove: "Remove",
     catSave: "Save",
     catSaveSort: "Save and re-sort all recipes",
-    catSortHint: "Re-sort has the AI pick categories again for every recipe, including ones you set yourself.",
+    catSortHint: "The description tells the AI what belongs in the category. Re-sort has the AI pick categories again for every recipe, including ones you set yourself.",
     catSaved: "Categories saved.",
     catSorting: "Re-sorting the recipes… this takes a moment.",
     catSorted: (n) => (n ? `Done. ${n} ${n === 1 ? "recipe" : "recipes"} got new categories.` : "Done. No recipes needed changing."),
@@ -367,6 +369,7 @@ class FoodPlanningCard extends HTMLElement {
         (msg) => {
           this._recipes = msg.recipes;
           this._categories = msg.categories || [];
+          this._categoryDescriptions = msg.category_descriptions || {};
           if (this._category && !this._categories.includes(this._category)) this._category = null;
           this._renderCategoryChips();
           this._renderGrid();
@@ -440,7 +443,12 @@ class FoodPlanningCard extends HTMLElement {
         border: 1px solid var(--divider-color); background: var(--secondary-background-color);
       }
       .cat-editor h2 { margin: 0 0 8px; font-size: 15px; font-weight: 500; }
-      .cat-editor .rows { display: grid; gap: 6px; }
+      .cat-editor .rows { display: grid; gap: 12px; }
+      .cat-editor .centry { display: grid; gap: 4px; }
+      .cat-editor input.desc {
+        padding: 5px 10px; font-size: 13px;
+        margin-left: calc(1.6em + 24px); width: calc(100% - 1.6em - 24px);
+      }
       .cat-editor .crow { display: flex; gap: 6px; align-items: center; }
       .cat-editor .crow .cat { flex: none; min-width: 1.6em; justify-content: center; }
       .cat-editor .crow input { flex: 1; padding: 6px 10px; }
@@ -577,13 +585,20 @@ class FoodPlanningCard extends HTMLElement {
     const t = this._t;
     const rowsBox = el("div", { cls: "rows" });
     const rows = [];
-    const addRow = (orig, value) => {
+    const addRow = (orig, value, description) => {
       const input = el("input", { attrs: { type: "text", "aria-label": t.catTitle } });
       input.value = value;
+      const desc = el("input", { cls: "desc", attrs: { type: "text", placeholder: t.catDescription, "aria-label": t.catDescription } });
+      desc.value = description || "";
       const preview = categoryLabel(value || "?");
       preview.textContent = (CATEGORY_ICONS[value.toLowerCase()] || "").trim();
       const remove = el("button", { cls: "secondary", text: "✕", attrs: { type: "button", title: t.catRemove, "aria-label": t.catRemove } });
-      const row = { orig, input, node: el("div", { cls: "crow" }, preview, input, remove) };
+      const row = {
+        orig,
+        input,
+        desc,
+        node: el("div", { cls: "centry" }, el("div", { cls: "crow" }, preview, input, remove), desc),
+      };
       input.addEventListener("input", () => {
         const name = input.value.trim();
         preview.style.setProperty("--cat", categoryColor(name || "?"));
@@ -596,18 +611,18 @@ class FoodPlanningCard extends HTMLElement {
       });
       rows.push(row);
       rowsBox.append(row.node);
-      return input;
+      return row;
     };
-    for (const name of this._categories) addRow(name, name);
+    const descriptions = this._categoryDescriptions || {};
+    for (const name of this._categories) addRow(name, name, descriptions[name]);
 
     const newInput = el("input", { attrs: { type: "text", placeholder: t.catNew } });
     const addButton = el("button", { cls: "secondary", text: t.catAdd, attrs: { type: "button" } });
     const add = () => {
       const name = newInput.value.trim();
       if (!name) return;
-      addRow(null, name);
       newInput.value = "";
-      newInput.focus();
+      addRow(null, name, "").desc.focus();
     };
     addButton.addEventListener("click", add);
     newInput.addEventListener("keydown", (ev) => {
@@ -630,10 +645,12 @@ class FoodPlanningCard extends HTMLElement {
     const submit = async (recategorize) => {
       const categories = [];
       const renames = {};
+      const descriptions = {};
       for (const row of rows) {
         const name = row.input.value.trim();
         if (!name) continue;
         categories.push(name);
+        descriptions[name] = row.desc.value.trim();
         if (row.orig && row.orig !== name) renames[row.orig] = name;
       }
       for (const b of [save, saveSort, cancel]) b.disabled = true;
@@ -643,6 +660,7 @@ class FoodPlanningCard extends HTMLElement {
           type: `${DOMAIN}/categories/set`,
           categories,
           renames,
+          descriptions,
           recategorize,
         });
         this._toggleCategoryEditor();
