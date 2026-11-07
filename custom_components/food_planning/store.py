@@ -49,6 +49,16 @@ LISTS = (SHOPPING, PANTRY)
 RECIPE_SEPARATOR = " · "
 
 
+def name_key(text: str) -> str:
+    """How an item's text is looked up in the product names (see names)."""
+    return " ".join(text.casefold().split())
+
+
+# Product name for ingredients that never need to be at home: water, salt,
+# pepper and optional ones ("till servering", "efter smak").
+ALWAYS_AVAILABLE = "-"
+
+
 def _new_uid() -> str:
     return uuid4().hex
 
@@ -78,8 +88,9 @@ class Recipe:
     # the recipe is marked as cooked. Drives "ready to cook".
     on_shopping_list: bool = False
     categories: list[str] = field(default_factory=list)
-    # Indexes of ingredients not at home, as worked out by the AI after the
-    # pantry or the recipe changed; None until checked. See pantry_match.py.
+    # Indexes of ingredients not at home, worked out from the product names
+    # after the pantry or the recipe changed; None until checked. See
+    # pantry_match.py.
     missing: list[int] | None = None
     uid: str = field(default_factory=_new_uid)
     created: str = field(default_factory=lambda: dt_util.utcnow().isoformat())
@@ -116,6 +127,10 @@ class FoodPlanningStore:
         )
         self.recipes: list[Recipe] = []
         self.categories: list[str] = []
+        # Item text (see name_key) -> product name, e.g. "2 finhackade
+        # schalottenlökar" -> "schalottenlök". Filled by the AI once per new
+        # text; recipes are matched against At home by product name.
+        self.names: dict[str, str] = {}
         self.lists: dict[str, list[ShoppingItem]] = {SHOPPING: [], PANTRY: []}
         self._listeners: list[Callable[[], None]] = []
 
@@ -141,6 +156,11 @@ class FoodPlanningStore:
             or DEFAULT_CATEGORIES.get(default_language, DEFAULT_CATEGORIES["sv"])
         )
         store.recipes = [_from_dict(Recipe, r) for r in data.get("recipes", [])]
+        store.names = {
+            k: v
+            for k, v in (data.get("names") or {}).items()
+            if isinstance(k, str) and isinstance(v, str)
+        }
         for list_name in LISTS:
             store.lists[list_name] = [
                 _shopping_item_from_dict(i) for i in data.get(list_name, [])
@@ -180,6 +200,7 @@ class FoodPlanningStore:
             {
                 "recipes": [asdict(r) for r in self.recipes],
                 "categories": self.categories,
+                "names": self.names,
                 **{
                     name: [asdict(i) for i in items]
                     for name, items in self.lists.items()
@@ -204,6 +225,18 @@ class FoodPlanningStore:
                 self._listeners.remove(listener)
 
         return _remove
+
+    # Product names
+
+    def product_name(self, text: str) -> str | None:
+        """The product name for an item's text, if known."""
+        return self.names.get(name_key(text))
+
+    def prune_names(self) -> None:
+        """Forget names of texts no longer on any recipe or list."""
+        used = {name_key(t) for r in self.recipes for t in r.ingredients}
+        used.update(name_key(i.summary) for items in self.lists.values() for i in items)
+        self.names = {k: v for k, v in self.names.items() if k in used}
 
     # Recipes
 

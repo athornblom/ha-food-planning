@@ -87,8 +87,13 @@ type: custom:food-planning-card
   category in the card. Manage the list itself on the settings page
   (Settings → Devices & services → Food Planning → Configure), one per
   line. It starts with a default set.
-- **What's at home decides "ready to cook".** After At home or the recipes
-  change, the AI checks which ingredients each recipe is missing at home:
+- **What's at home decides "ready to cook".** Every ingredient and At home
+  item gets a short product name ("2 finhackade schalottenlökar" →
+  "schalottenlök", "Parmesan, bit" → "parmesan"), and an ingredient is at
+  home when an At home item has the same name. The check is instant and
+  local; the AI is only asked to name texts it hasn't seen before (a new
+  recipe, a new item), and its answers are kept, so "riven parmesan" is
+  only looked up once:
   - **✓ Redo att laga:** everything is at home (water, salt and pepper are
     assumed; optional ingredients don't count).
   - **Saknar N:** the recipe view marks what's missing.
