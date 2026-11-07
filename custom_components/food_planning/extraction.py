@@ -100,6 +100,9 @@ INSTRUCTIONS = """Extract the recipe from the content below.
 - Keep the steps faithful to the source; do not invent quantities or steps.
 - Set total_minutes to the total time from start to served, including waiting, rising and baking: the time the source states (e.g. totalTime), or else your estimate from the steps.
 - Pick the categories that fit the dish from this list only: {categories}. \
+Choose by the kind of dish and when it's eaten, the way a cookbook files it: \
+a sweet dish eaten after a meal (cake, pie, mousse, ice cream, panna cotta) \
+is a dessert, not a snack; a snack is something small eaten between meals. \
 Usually one or two; none if nothing fits.
 - If the content does not contain a recipe, set is_recipe to false and \
 leave the other fields empty.
