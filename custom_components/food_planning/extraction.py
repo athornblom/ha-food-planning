@@ -8,7 +8,7 @@ import json
 import logging
 import re
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import urljoin, urlparse
 
 from aiohttp import ClientError, ClientResponseError, ClientTimeout
 
@@ -24,6 +24,9 @@ FETCH_TIMEOUT = ClientTimeout(total=20)
 # Upper bound on page text sent to the model. Pages with a recipe in
 # structured data stay far below this; it only trims very long article pages.
 MAX_CONTENT_CHARS = 60_000
+# Pages larger than this are cut off before parsing (a recipe page is far
+# smaller; this guards against a link to a huge file).
+MAX_PAGE_BYTES = 5_000_000
 # Identify honestly. Sites that block automated clients are respected, not
 # worked around; the user can paste the recipe text instead.
 HEADERS = {
@@ -204,11 +207,19 @@ def _find_recipe_node(node: Any) -> dict[str, Any] | None:
     return None
 
 
-def _parse_page(html: str, url: str) -> RecipeSource:
-    """Turn a page into recipe text. Runs in the executor."""
+def _parse_page(html: str, url: str, base_url: str | None = None) -> RecipeSource:
+    """Turn a page into recipe text. Runs in the executor.
+
+    Image links are resolved against base_url (the page's address after
+    redirects), since pages often use relative ones.
+    """
     parser = _PageParser()
     parser.feed(html)
     parser.close()
+    base = base_url or url
+
+    def absolute(image: str | None) -> str | None:
+        return urljoin(base, image) if image else None
 
     for block in parser.jsonld:
         try:
@@ -224,10 +235,12 @@ def _parse_page(html: str, url: str) -> RecipeSource:
             return RecipeSource(
                 text=json.dumps(recipe, ensure_ascii=False),
                 url=url,
-                image_url=image if isinstance(image, str) else parser.image_url,
+                image_url=absolute(
+                    image if isinstance(image, str) else parser.image_url
+                ),
             )
 
-    return RecipeSource(text=parser.text, url=url, image_url=parser.image_url)
+    return RecipeSource(text=parser.text, url=url, image_url=absolute(parser.image_url))
 
 
 _TIKTOK_DATA_RE = re.compile(
@@ -299,7 +312,17 @@ async def _async_get_page(hass: HomeAssistant, url: str) -> tuple[str, str]:
                 _LOGGER.info("%s refused automated access (HTTP %s)", url, resp.status)
                 raise _error("site_refused", url=url)
             resp.raise_for_status()
-            return str(resp.url), await resp.text(errors="replace")
+            body = bytearray()
+            async for chunk in resp.content.iter_chunked(64 * 1024):
+                body.extend(chunk)
+                if len(body) >= MAX_PAGE_BYTES:
+                    _LOGGER.info("%s is larger than %d bytes; cut off", url, len(body))
+                    break
+            encoding = resp.get_encoding() if resp.charset else "utf-8"
+            try:
+                return str(resp.url), body.decode(encoding, errors="replace")
+            except LookupError:
+                return str(resp.url), body.decode("utf-8", errors="replace")
     except ClientResponseError as err:
         reason = f"HTTP {err.status}"
     except (ClientError, TimeoutError) as err:
@@ -317,7 +340,7 @@ async def async_fetch_source(hass: HomeAssistant, url: str) -> RecipeSource:
         source = await hass.async_add_executor_job(_parse_tiktok_page, html, final_url)
         return source or await _async_fetch_tiktok_oembed(hass, final_url)
 
-    source = await hass.async_add_executor_job(_parse_page, html, url)
+    source = await hass.async_add_executor_job(_parse_page, html, url, final_url)
     if not source.text:
         raise _error("no_recipe_found")
     return source

@@ -655,10 +655,14 @@ const timerHub = {
   _audio: null,
   _ringLoop: null,
 
+  _failedAt: 0,
+
   connect(hass) {
     if (!hass) return;
     this.hass = hass;
-    if (!this._unsub && !this._subscribing) this._subscribe();
+    // set hass runs on every state change; after a failure (integration
+    // not loaded) wait a while before trying again.
+    if (!this._unsub && !this._subscribing && Date.now() - this._failedAt > 30000) this._subscribe();
   },
 
   async _subscribe() {
@@ -669,7 +673,7 @@ const timerHub = {
         { type: `${DOMAIN}/timers/subscribe` }
       );
     } catch (_err) {
-      /* integration not loaded: no timers */
+      this._failedAt = Date.now(); // integration not loaded: no timers
     } finally {
       this._subscribing = false;
     }
@@ -1161,9 +1165,14 @@ class FoodPlanningRecipeDialog extends HTMLElement {
       this.close();
       return;
     }
+    // Any change elsewhere (a shopping list tick) re-sends every recipe;
+    // only re-render when this one changed.
+    const key = JSON.stringify([recipe, this._categories]);
+    const unchanged = key === this._recipeKey;
     this._recipe = recipe;
+    this._recipeKey = key;
     // Don't throw away what the user is typing when data changes elsewhere.
-    if (this._editing) return;
+    if (this._editing || unchanged) return;
     this._render();
   }
 
@@ -1321,6 +1330,8 @@ class FoodPlanningRecipeDialog extends HTMLElement {
       corner,
       el("div", { cls: "content" }, ...content)
     );
+    // Keep the scroll position when re-rendering (e.g. while cooking).
+    const scrollTop = this.shadowRoot.querySelector(".backdrop")?.scrollTop || 0;
     const backdrop = el("div", { cls: "backdrop" }, panel);
     if (!this._editing) {
       const timers = document.createElement("food-planning-timers");
@@ -1332,6 +1343,7 @@ class FoodPlanningRecipeDialog extends HTMLElement {
       if (ev.target === backdrop && !this._editing) this.close();
     });
     this.shadowRoot.replaceChildren(this._style(), backdrop);
+    if (scrollTop) backdrop.scrollTop = scrollTop;
   }
 
   _renderView() {
@@ -1955,22 +1967,31 @@ class FoodPlanningListCard extends HTMLElement {
       ...content,
       el("p", { cls: "note", text: t.merging })
     );
+    // Updates arrive while typing (another device, a merge); keep the text.
     const focused = this.shadowRoot.activeElement;
     const keepAdd = focused && focused.closest && focused.closest("form.add") ? this.shadowRoot.querySelector("form.add input")?.value : null;
+    const oldEdit = this.shadowRoot.querySelector("li.editing input[type=text]");
+    const keepEdit = oldEdit && oldEdit.dataset.uid === this._editing ? oldEdit.value : null;
     this.shadowRoot.replaceChildren(style, card);
     if (keepAdd !== null && keepAdd !== undefined) {
       addInput.value = keepAdd;
       addInput.focus();
     }
     if (this._statusText) this._setStatus(this._statusText.text, this._statusText.isError);
-    this.shadowRoot.querySelector("li.editing input[type=text]")?.focus();
+    const editInput = this.shadowRoot.querySelector("li.editing input[type=text]");
+    if (editInput) {
+      if (keepEdit !== null) editInput.value = keepEdit;
+      editInput.focus();
+    } else if (this._editing && this._items && !this._items.some((i) => i.uid === this._editing)) {
+      this._editing = null; // removed elsewhere
+    }
   }
 
   _row(item) {
     const t = this._t;
     const isDone = item.status === "completed";
     if (this._editing === item.uid) {
-      const input = el("input", { attrs: { type: "text" } });
+      const input = el("input", { attrs: { type: "text", "data-uid": item.uid } });
       input.value = item.summary;
       const save = el("button", { text: t.save, attrs: { type: "submit" } });
       const cancel = el("button", { cls: "secondary", text: t.cancel, attrs: { type: "button" } });

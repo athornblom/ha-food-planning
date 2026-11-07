@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import ipaddress
 import logging
 from pathlib import Path
 import shutil
+from urllib.parse import urlparse
 
 from aiohttp import ClientError
 
@@ -29,6 +31,26 @@ _EXTENSIONS = {
 }
 
 
+def is_public_url(url: str) -> bool:
+    """False for links into the local network.
+
+    Image links come from the recipe page, so a page could otherwise make
+    Home Assistant fetch something from the home network and publish it
+    under /food_planning/images.
+    """
+    parsed = urlparse(url)
+    if parsed.scheme not in ("http", "https") or not parsed.hostname:
+        return False
+    host = parsed.hostname.lower().rstrip(".")
+    try:
+        address = ipaddress.ip_address(host)
+    except ValueError:
+        return "." in host and not host.endswith(
+            (".local", ".lan", ".home", ".internal", ".localdomain", ".home.arpa")
+        )
+    return address.is_global
+
+
 def images_dir(hass: HomeAssistant) -> Path:
     """Folder for saved images: /config/food_planning/images."""
     return Path(hass.config.path(DOMAIN, "images"))
@@ -46,7 +68,7 @@ async def async_save_image(
 
     Failures are not errors: the recipe then shows the remote image, or none.
     """
-    if not url or not url.startswith(("https://", "http://")):
+    if not url or not is_public_url(url):
         return None
     session = async_get_clientsession(hass)
     try:

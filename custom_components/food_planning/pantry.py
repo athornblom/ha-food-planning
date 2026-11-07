@@ -107,6 +107,7 @@ def apply_changes(
         if text == USED_UP:
             removed.add(uid)
         elif text != item.summary:
+            store.carry_name(item.summary, text)
             item.summary = text
         else:
             continue

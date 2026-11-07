@@ -232,6 +232,11 @@ class FoodPlanningStore:
         """The product name for an item's text, if known."""
         return self.names.get(name_key(text))
 
+    def carry_name(self, old_text: str, new_text: str) -> None:
+        """Give a rewritten item (new amount, merged) its old product name."""
+        if (name := self.product_name(old_text)) is not None:
+            self.names.setdefault(name_key(new_text), name)
+
     def prune_names(self) -> None:
         """Forget names of texts no longer on any recipe or list."""
         used = {name_key(t) for r in self.recipes for t in r.ingredients}
@@ -261,6 +266,9 @@ class FoodPlanningStore:
         if recipe is None:
             return None
         old_title = recipe.title
+        if "ingredients" in changes and changes["ingredients"] != recipe.ingredients:
+            # The indexes no longer fit; re-checked right after saving.
+            recipe.missing = None
         for key in ("title", "servings", "ingredients", "steps", "notes", "source_url"):
             if key in changes:
                 setattr(recipe, key, changes[key])

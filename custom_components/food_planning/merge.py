@@ -140,6 +140,11 @@ def apply_groups(
             items.append(item)
         else:
             keep = items[0]
+            # Same product: the merged text keeps the name, so recipes
+            # don't flicker to "missing" while it's looked up again.
+            names = {store.product_name(item.summary) for item in items}
+            if len(names) == 1:
+                store.carry_name(keep.summary, text)
             keep.summary = text
             keep.description = _merge_descriptions(items)
             keep.recipe_uids = list(
