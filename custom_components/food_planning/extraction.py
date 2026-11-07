@@ -91,8 +91,10 @@ RECIPE_STRUCTURE: dict[str, Any] = {
 }
 
 CATEGORY_RULES = """Choose by what each category means (after the colon) \
-and by how the dish is served and eaten, the way a cookbook files it, not by \
-single ingredients. Usually one or two; none if nothing fits."""
+and by how the dish is served and eaten, the way a cookbook from the \
+household's own food culture would file it, not by single ingredients. The \
+categories are named and described in the household's language. Usually one \
+or two; none if nothing fits."""
 
 INSTRUCTIONS = """Extract the recipe from the content below.
 

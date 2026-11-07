@@ -49,42 +49,77 @@ DEFAULT_CATEGORIES = {
     ],
 }
 
-# What each default category means, told to the AI so it picks well.
-# Keyed by lowercase name in both languages; users can write their own.
-_DESCRIPTIONS = {
-    ("frukost", "breakfast"): (
-        "Eaten in the morning: porridge, eggs, pancakes, yoghurt bowls."
+# What each default category means, told to the AI so it picks well, with
+# examples from each language's own food culture. Keyed by lowercase name;
+# users can write their own in the category editor.
+_SV_DESCRIPTIONS = {
+    "frukost": (
+        "Äts på morgonen: gröt, filmjölk eller yoghurt med müsli, ägg, "
+        "smörgåsar, frukostbullar, pannkakor."
     ),
-    ("middag", "dinner"): "A main course for lunch or dinner.",
-    ("förrätt", "starter"): (
-        "A small plated dish served at the table before the main course."
+    "middag": (
+        "En huvudrätt till lunch eller middag: köttbullar med potatis, "
+        "pasta, gryta, fiskgratäng, tacos, pyttipanna."
     ),
-    ("efterrätt", "dessert"): (
-        "A sweet dish served after a meal: cake, pie, mousse, ice cream."
+    "förrätt": (
+        "En liten rätt som serveras vid bordet före huvudrätten: toast "
+        "skagen, löjromstoast, carpaccio, en liten soppa."
     ),
-    ("bakning", "baking"): (
-        "Baked from a dough or batter: bread, buns, cookies, cakes."
+    "efterrätt": (
+        "Något sött efter maten: kladdkaka med grädde, äppelpaj med "
+        "vaniljsås, pannacotta, glass, chokladmousse."
     ),
-    ("plockmat", "finger food"): (
-        "Bites or small dishes put out to share and eat with the fingers, "
-        "often with drinks: dips, chips, nuts, olives, tapas, party or "
-        "movie-night snacks, savoury or sweet."
+    "bakning": (
+        "Bakas av deg eller smet: bröd, kanelbullar, småkakor, mjuka kakor, " "tårtor."
     ),
-    ("mellanmål", "snack"): (
+    "plockmat": (
+        "Smårätter att ställa fram och dela, gärna till dryck, mingel eller "
+        "fredagsmys: chips och dipp, ostbricka, oliver, tapas, minipizzor, "
+        "nötter, snacks, salt eller sött."
+    ),
+    "mellanmål": (
+        "Något litet och vardagligt för en person mellan måltiderna: "
+        "smörgås, knäckebröd med ost, yoghurt, frukt, smoothie. Inte mat "
+        "att ställa fram och dela."
+    ),
+    "soppa": (
+        "Soppa eller gryta som äts med sked: ärtsoppa, köttsoppa, "
+        "fisksoppa, linssoppa."
+    ),
+    "sallad": (
+        "Sallad som måltid eller tillbehör: kycklingsallad, pastasallad, " "coleslaw."
+    ),
+    "vegetariskt": "Innehåller inget kött, ingen fågel och ingen fisk.",
+    "matlåda": (
+        "Håller sig och går bra att värma: bra att laga i stor sats och ta "
+        "med till jobbet."
+    ),
+    "helg": (
+        "Tar längre tid eller är lite finare: söndagsstek, långkok, middag "
+        "med gäster, högtidsmat."
+    ),
+}
+_EN_DESCRIPTIONS = {
+    "breakfast": ("Eaten in the morning: porridge, eggs, pancakes, yoghurt bowls."),
+    "dinner": "A main course for lunch or dinner.",
+    "starter": ("A small plated dish served at the table before the main course."),
+    "dessert": "A sweet dish served after a meal: cake, pie, mousse, ice cream.",
+    "baking": "Baked from a dough or batter: bread, buns, cookies, cakes.",
+    "finger food": (
+        "Bites or small dishes put out to share, often with drinks: dips, "
+        "chips, nuts, olives, tapas, party or movie-night snacks."
+    ),
+    "snack": (
         "A small everyday bite for one person between meals: a sandwich, "
         "yoghurt, fruit, a smoothie. Not food put out to share."
     ),
-    ("soppa", "soup"): "A soup or stew eaten with a spoon.",
-    ("sallad", "salad"): "A salad, as a meal or a side.",
-    ("vegetariskt", "vegetarian"): "Contains no meat, poultry or fish.",
-    ("matlåda", "lunch box"): (
-        "Keeps and reheats well: good to cook in bulk and take along."
-    ),
-    ("helg", "weekend"): ("Takes longer or is a bit fancier: for weekends and guests."),
+    "soup": "A soup or stew eaten with a spoon.",
+    "salad": "A salad, as a meal or a side.",
+    "vegetarian": "Contains no meat, poultry or fish.",
+    "lunch box": "Keeps and reheats well: good to cook in bulk and take along.",
+    "weekend": "Takes longer or is a bit fancier: for weekends and guests.",
 }
-DEFAULT_CATEGORY_DESCRIPTIONS = {
-    name: text for names, text in _DESCRIPTIONS.items() for name in names
-}
+DEFAULT_CATEGORY_DESCRIPTIONS = _SV_DESCRIPTIONS | _EN_DESCRIPTIONS
 
 # The two item lists: what to buy, and what's at home.
 SHOPPING = "shopping"
