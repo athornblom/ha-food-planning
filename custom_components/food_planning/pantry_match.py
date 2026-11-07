@@ -31,6 +31,10 @@ if TYPE_CHECKING:
 _LOGGER = logging.getLogger(__name__)
 
 DEBOUNCE_SECONDS = 3.0
+# After a failure (e.g. the AI integration isn't loaded yet after a
+# restart), try again after this long, doubling up to the maximum.
+RETRY_SECONDS = 30.0
+MAX_RETRY_SECONDS = 900.0
 NONE_MISSING = "-"
 
 MATCH_STRUCTURE: dict[str, Any] = {
@@ -168,6 +172,7 @@ class PantryMatcher:
         self._lock = asyncio.Lock()
         self._cancel_timer: CALLBACK_TYPE | None = None
         self._last_signature: str | None = None
+        self._retry_delay = RETRY_SECONDS
 
     @callback
     def async_schedule(self) -> None:
@@ -175,9 +180,13 @@ class PantryMatcher:
         store = self._entry.runtime_data.store
         if _signature(store) == self._last_signature:
             return
+        self._schedule_in(DEBOUNCE_SECONDS)
+
+    @callback
+    def _schedule_in(self, delay: float) -> None:
         if self._cancel_timer:
             self._cancel_timer()
-        self._cancel_timer = async_call_later(self._hass, DEBOUNCE_SECONDS, self._fire)
+        self._cancel_timer = async_call_later(self._hass, delay, self._fire)
 
     @callback
     def _fire(self, _now: datetime) -> None:
@@ -195,8 +204,15 @@ class PantryMatcher:
             try:
                 changed = await async_match_pantry(self._hass, self._entry)
             except HomeAssistantError as err:
-                _LOGGER.warning("Could not check recipes against At home: %s", err)
+                _LOGGER.warning(
+                    "Could not check recipes against At home, retrying in %d s: %s",
+                    self._retry_delay,
+                    err,
+                )
+                self._schedule_in(self._retry_delay)
+                self._retry_delay = min(self._retry_delay * 2, MAX_RETRY_SECONDS)
                 return
+            self._retry_delay = RETRY_SECONDS
             # Only remember the inputs if they didn't change meanwhile;
             # otherwise the next save schedules another check.
             if _signature(store) == signature:
