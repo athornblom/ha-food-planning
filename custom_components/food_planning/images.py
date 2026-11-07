@@ -2,16 +2,18 @@
 
 from __future__ import annotations
 
+from datetime import timedelta
 import ipaddress
 import logging
 from pathlib import Path
 import shutil
-from urllib.parse import urlparse
+from urllib.parse import urljoin, urlparse
 
-from aiohttp import ClientError
+from aiohttp import ClientError, ClientResponse
 
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
+from homeassistant.util import dt as dt_util
 
 from .const import DOMAIN, IMAGES_URL
 from .extraction import FETCH_TIMEOUT, HEADERS
@@ -20,6 +22,10 @@ from .store import FoodPlanningStore
 _LOGGER = logging.getLogger(__name__)
 
 MAX_IMAGE_BYTES = 5_000_000
+MAX_REDIRECTS = 3
+# A recipe whose image couldn't be saved is tried again at startup, at most
+# this often.
+REPAIR_RETRY = timedelta(days=7)
 # Anything smaller is not a usable photo (e.g. a truncated download).
 MIN_IMAGE_BYTES = 2_000
 _EXTENSIONS = {
@@ -68,30 +74,47 @@ async def async_save_image(
 
     Failures are not errors: the recipe then shows the remote image, or none.
     """
-    if not url or not is_public_url(url):
+    if not url:
         return None
     session = async_get_clientsession(hass)
     try:
-        async with session.get(url, headers=HEADERS, timeout=FETCH_TIMEOUT) as resp:
-            extension = _EXTENSIONS.get(resp.content_type)
-            if resp.status != 200 or extension is None:
-                _LOGGER.debug(
-                    "Not saving image %s: %s %s", url, resp.status, resp.content_type
-                )
+        # Follow redirects by hand, so each hop is checked to be public.
+        for _hop in range(MAX_REDIRECTS + 1):
+            if not is_public_url(url):
+                _LOGGER.debug("Not fetching image from a local address: %s", url)
                 return None
-            # Read the whole body in chunks. (content.read(n) returns only
-            # what has arrived so far, which truncated images in 0.3.0.)
-            data = bytearray()
-            async for chunk in resp.content.iter_chunked(64 * 1024):
-                data.extend(chunk)
-                if len(data) > MAX_IMAGE_BYTES:
-                    _LOGGER.debug(
-                        "Image %s is larger than %d bytes", url, MAX_IMAGE_BYTES
-                    )
-                    return None
+            async with session.get(
+                url, headers=HEADERS, timeout=FETCH_TIMEOUT, allow_redirects=False
+            ) as resp:
+                if resp.status in (301, 302, 303, 307, 308) and resp.headers.get(
+                    "Location"
+                ):
+                    url = urljoin(url, resp.headers["Location"])
+                    continue
+                return await _async_read_image(hass, uid, url, resp)
     except (ClientError, TimeoutError) as err:
         _LOGGER.debug("Could not download image %s: %s", url, err)
         return None
+    _LOGGER.debug("Too many redirects for image %s", url)
+    return None
+
+
+async def _async_read_image(
+    hass: HomeAssistant, uid: str, url: str, resp: ClientResponse
+) -> str | None:
+    """Save an image response's body. Returns the file name."""
+    extension = _EXTENSIONS.get(resp.content_type)
+    if resp.status != 200 or extension is None:
+        _LOGGER.debug("Not saving image %s: %s %s", url, resp.status, resp.content_type)
+        return None
+    # Read the whole body in chunks. (content.read(n) returns only what has
+    # arrived so far, which truncated images in 0.3.0.)
+    data = bytearray()
+    async for chunk in resp.content.iter_chunked(64 * 1024):
+        data.extend(chunk)
+        if len(data) > MAX_IMAGE_BYTES:
+            _LOGGER.debug("Image %s is larger than %d bytes", url, MAX_IMAGE_BYTES)
+            return None
     if len(data) < MIN_IMAGE_BYTES:
         _LOGGER.debug("Image %s is only %d bytes", url, len(data))
         return None
@@ -116,14 +139,21 @@ async def async_repair_images(hass: HomeAssistant, store: FoodPlanningStore) -> 
         return not path.is_file() or path.stat().st_size < MIN_IMAGE_BYTES
 
     changed = False
+    now = dt_util.utcnow()
     for recipe in list(store.recipes):
         if not recipe.image_url:
+            continue
+        retry_after = dt_util.parse_datetime(recipe.image_retry_after or "")
+        if retry_after and retry_after > now:
             continue
         if not await hass.async_add_executor_job(_needs_repair, recipe.image):
             continue
         if name := await async_save_image(hass, recipe.uid, recipe.image_url):
             recipe.image = name
-            changed = True
+            recipe.image_retry_after = None
+        else:
+            recipe.image_retry_after = (now + REPAIR_RETRY).isoformat()
+        changed = True
     if changed:
         await store.async_save()
 

@@ -168,7 +168,9 @@ Finished timers stay (ringing) until dismissed, at most 15 minutes.
 ### Actions
 
 - `food_planning.import_recipe`: `url` **or** `text`, plus optional
-  `add_to_shopping_list`. Can return the recipe as a response.
+  `add_to_shopping_list`. Can return the recipe as a response (`created`
+  is false when the link was imported before; the saved recipe is
+  returned without asking the AI again).
 - `food_planning.add_recipe_to_shopping_list`: `recipe` (title or ID),
   optional `ingredients` (a subset, exact text) or `only_missing` (only
   what isn't at home).
@@ -215,6 +217,9 @@ published.
 - **Merge duplicate shopping items:** on by default, see above (applies to
   At home too).
 - **Update At home when cooked:** on by default, see above.
+- **Only administrators change recipes:** off by default. When on, only
+  administrator users can edit or delete recipes; everyone can still
+  import, shop and cook.
 - **Recipe categories:** one per line. Removing one also takes it off the
   recipes that had it.
 
@@ -229,7 +234,9 @@ All can be changed later under the integration's **Configure** button.
   like TikTok's, expire). Both are separate from the code, so updates never
   touch them, and normal Home Assistant backups include them.
 - Saved images are served without login at `/food_planning/images/…`,
-  like files in `/config/www`. The file names are random.
+  like files in `/config/www`. The file names are random. Image links
+  (which come from the recipe page) are only fetched from public
+  addresses, never from your local network, redirects included.
 - Deleting the integration (Settings → Devices & services → Food Planning
   → Delete) **deletes the data and the images**. Restore a backup to get
   them back.

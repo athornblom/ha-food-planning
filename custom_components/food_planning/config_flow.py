@@ -23,11 +23,13 @@ from homeassistant.helpers.selector import (
 )
 
 from .const import (
+    CONF_ADMIN_ONLY,
     CONF_AI_TASK_ENTITY,
     CONF_CATEGORIES,
     CONF_LANGUAGE,
     CONF_MERGE_SHOPPING,
     CONF_UPDATE_PANTRY,
+    DEFAULT_ADMIN_ONLY,
     DEFAULT_LANGUAGE,
     DEFAULT_MERGE_SHOPPING,
     DEFAULT_UPDATE_PANTRY,
@@ -48,6 +50,7 @@ OPTIONS_SCHEMA = vol.Schema(
         vol.Required(
             CONF_UPDATE_PANTRY, default=DEFAULT_UPDATE_PANTRY
         ): BooleanSelector(),
+        vol.Required(CONF_ADMIN_ONLY, default=DEFAULT_ADMIN_ONLY): BooleanSelector(),
     }
 )
 

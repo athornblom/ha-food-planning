@@ -9,10 +9,19 @@ import voluptuous as vol
 from homeassistant.components import websocket_api
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.util import dt as dt_util
 
-from .const import CONF_UPDATE_PANTRY, DEFAULT_UPDATE_PANTRY, DOMAIN
-from .data import FoodPlanningConfigEntry, async_delete_recipe
+from .const import (
+    CONF_ADMIN_ONLY,
+    CONF_UPDATE_PANTRY,
+    DEFAULT_ADMIN_ONLY,
+    DEFAULT_UPDATE_PANTRY,
+    DOMAIN,
+    SIGNAL_RECIPES_UPDATED,
+    SIGNAL_TIMERS_UPDATED,
+)
+from .data import FoodPlanningConfigEntry, FoodPlanningData, async_delete_recipe
 from .images import image_url
 from .pantry import async_consume_recipe
 from .store import FoodPlanningStore, Recipe
@@ -37,6 +46,35 @@ def _loaded_entry(hass: HomeAssistant) -> FoodPlanningConfigEntry | None:
         ),
         None,
     )
+
+
+def _current_data(hass: HomeAssistant) -> FoodPlanningData | None:
+    """The data of the entry that is loaded, or being set up after a reload."""
+    for entry in hass.config_entries.async_entries(DOMAIN):
+        if entry.state in (
+            ConfigEntryState.LOADED,
+            ConfigEntryState.SETUP_IN_PROGRESS,
+        ) and isinstance(getattr(entry, "runtime_data", None), FoodPlanningData):
+            return entry.runtime_data
+    return None
+
+
+def _may_change_recipes(
+    entry: FoodPlanningConfigEntry,
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+) -> bool:
+    """Check the "only administrators change recipes" option; reply if not."""
+    if not entry.options.get(CONF_ADMIN_ONLY, DEFAULT_ADMIN_ONLY):
+        return True
+    if connection.user.is_admin:
+        return True
+    connection.send_error(
+        msg["id"],
+        websocket_api.ERR_UNAUTHORIZED,
+        "Only administrators can change or delete recipes",
+    )
+    return False
 
 
 def _recipe_json(store: FoodPlanningStore, recipe: Recipe) -> dict[str, Any]:
@@ -80,15 +118,20 @@ def ws_subscribe_recipes(
     connection: websocket_api.ActiveConnection,
     msg: dict[str, Any],
 ) -> None:
-    """Send all recipes now and again after every change."""
-    entry = _loaded_entry(hass)
-    if entry is None:
-        connection.send_error(msg["id"], "not_loaded", "Food Planning is not loaded")
+    """Send all recipes now and again after every change.
+
+    Follows whichever config entry is loaded, so the subscription keeps
+    working when the integration is reloaded.
+    """
+    if not hass.config_entries.async_entries(DOMAIN):
+        connection.send_error(msg["id"], "not_loaded", "Food Planning is not set up")
         return
-    store = entry.runtime_data.store
 
     @callback
     def send_recipes() -> None:
+        if (data := _current_data(hass)) is None:
+            return
+        store = data.store
         connection.send_message(
             websocket_api.event_message(
                 msg["id"],
@@ -99,7 +142,9 @@ def ws_subscribe_recipes(
             )
         )
 
-    connection.subscriptions[msg["id"]] = store.async_add_listener(send_recipes)
+    connection.subscriptions[msg["id"]] = async_dispatcher_connect(
+        hass, SIGNAL_RECIPES_UPDATED, send_recipes
+    )
     connection.send_result(msg["id"])
     send_recipes()
 
@@ -117,6 +162,8 @@ async def ws_delete_recipe(
     entry = _loaded_entry(hass)
     if entry is None:
         connection.send_error(msg["id"], "not_loaded", "Food Planning is not loaded")
+        return
+    if not _may_change_recipes(entry, connection, msg):
         return
     if not await async_delete_recipe(hass, entry, msg["uid"]):
         connection.send_error(msg["id"], "not_found", "Recipe not found")
@@ -151,6 +198,8 @@ async def ws_update_recipe(
     entry = _loaded_entry(hass)
     if entry is None:
         connection.send_error(msg["id"], "not_loaded", "Food Planning is not loaded")
+        return
+    if not _may_change_recipes(entry, connection, msg):
         return
     store = entry.runtime_data.store
     changes = {
@@ -207,14 +256,15 @@ def ws_subscribe_timers(
     "now" is the server's clock, so the dashboards count down to "ends_at"
     correctly even if the device's clock is off.
     """
-    entry = _loaded_entry(hass)
-    if entry is None:
-        connection.send_error(msg["id"], "not_loaded", "Food Planning is not loaded")
+    if not hass.config_entries.async_entries(DOMAIN):
+        connection.send_error(msg["id"], "not_loaded", "Food Planning is not set up")
         return
-    manager = entry.runtime_data.timers
 
     @callback
     def send_timers() -> None:
+        if (data := _current_data(hass)) is None:
+            return
+        manager = data.timers
         now = dt_util.utcnow()
         connection.send_message(
             websocket_api.event_message(
@@ -226,6 +276,8 @@ def ws_subscribe_timers(
             )
         )
 
-    connection.subscriptions[msg["id"]] = manager.async_add_listener(send_timers)
+    connection.subscriptions[msg["id"]] = async_dispatcher_connect(
+        hass, SIGNAL_TIMERS_UPDATED, send_timers
+    )
     connection.send_result(msg["id"])
     send_timers()

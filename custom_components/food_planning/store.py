@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import asdict, dataclass, field, fields
 from typing import Any, Self
+from urllib.parse import parse_qsl, urlencode, urlparse
 from uuid import uuid4
 
 from homeassistant.core import CALLBACK_TYPE, HomeAssistant, callback
@@ -59,6 +60,34 @@ def name_key(text: str) -> str:
 ALWAYS_AVAILABLE = "-"
 
 
+# Query parameters that only track where a link was shared from.
+_TRACKING_PARAMS = frozenset(
+    {"fbclid", "gclid", "igshid", "si", "mc_cid", "mc_eid", "ref", "share"}
+)
+
+
+def url_key(url: str) -> str:
+    """A link without what doesn't change the page, to spot repeat imports.
+
+    Drops the scheme, "www.", a trailing slash, the fragment and tracking
+    parameters (TikTok links: every parameter).
+    """
+    parsed = urlparse(url.strip())
+    host = (parsed.hostname or "").lower().removeprefix("www.")
+    if host == "tiktok.com" or host.endswith(".tiktok.com"):
+        query = ""
+    else:
+        query = urlencode(
+            [
+                (k, v)
+                for k, v in parse_qsl(parsed.query, keep_blank_values=True)
+                if k.lower() not in _TRACKING_PARAMS
+                and not k.lower().startswith("utm_")
+            ]
+        )
+    return f"{host}{parsed.path.rstrip('/')}" + (f"?{query}" if query else "")
+
+
 def _new_uid() -> str:
     return uuid4().hex
 
@@ -84,6 +113,8 @@ class Recipe:
     # remote links, e.g. TikTok's, can expire.
     image_url: str | None = None
     image: str | None = None
+    # When saving the image failed: don't try again before this time.
+    image_retry_after: str | None = None
     # Set when the ingredients are added to the shopping list, cleared when
     # the recipe is marked as cooked. Drives "ready to cook".
     on_shopping_list: bool = False
@@ -255,6 +286,16 @@ class FoodPlanningStore:
             return recipe
         wanted = key.strip().casefold()
         return next((r for r in self.recipes if r.title.casefold() == wanted), None)
+
+    def find_recipe_by_url(self, url: str | None) -> Recipe | None:
+        """A recipe imported from the same page, if any."""
+        if not url:
+            return None
+        key = url_key(url)
+        return next(
+            (r for r in self.recipes if r.source_url and url_key(r.source_url) == key),
+            None,
+        )
 
     def add_recipe(self, recipe: Recipe) -> None:
         """Add a recipe at the top of the list."""

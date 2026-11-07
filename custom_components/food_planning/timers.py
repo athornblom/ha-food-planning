@@ -103,6 +103,11 @@ class Timer:
         }
 
 
+def _discard(items: list[Any], item: Any) -> None:
+    if item in items:
+        items.remove(item)
+
+
 class TimerManager:
     """Keeps the timers, ends them on time and tells the entities."""
 
@@ -174,13 +179,13 @@ class TimerManager:
     def async_add_listener(self, listener: Callable[[], None]) -> CALLBACK_TYPE:
         """Call listener after every change. Returns a remove function."""
         self._listeners.append(listener)
-        return lambda: self._listeners.remove(listener)
+        return lambda: _discard(self._listeners, listener)
 
     @callback
     def async_add_event_listener(self, listener: TimerEventListener) -> CALLBACK_TYPE:
         """Call listener(event_type, timer) for each timer event."""
         self._event_listeners.append(listener)
-        return lambda: self._event_listeners.remove(listener)
+        return lambda: _discard(self._event_listeners, listener)
 
     def _emit(self, event_type: str, timer: Timer) -> None:
         for listener in list(self._event_listeners):

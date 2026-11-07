@@ -9,6 +9,7 @@ from homeassistant.components.http import StaticPathConfig
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import config_validation as cv, entity_registry as er
+from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.helpers.typing import ConfigType
 from homeassistant.loader import async_get_integration
 
@@ -20,6 +21,8 @@ from .const import (
     FRONTEND_URL,
     IMAGES_URL,
     REMOVED_ENTITIES,
+    SIGNAL_RECIPES_UPDATED,
+    SIGNAL_TIMERS_UPDATED,
 )
 from .data import FoodPlanningConfigEntry, FoodPlanningData
 from .images import async_delete_all_images, async_repair_images, ensure_images_dir
@@ -83,6 +86,20 @@ async def async_setup_entry(
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     # After the entities, so timers that ended during a restart fire events.
     timers.async_start()
+    # Tell open dashboards (subscribed through the websocket API) about
+    # changes, and refresh them now in case this is a reload.
+    entry.async_on_unload(
+        store.async_add_listener(
+            lambda: async_dispatcher_send(hass, SIGNAL_RECIPES_UPDATED)
+        )
+    )
+    entry.async_on_unload(
+        timers.async_add_listener(
+            lambda: async_dispatcher_send(hass, SIGNAL_TIMERS_UPDATED)
+        )
+    )
+    hass.loop.call_soon(async_dispatcher_send, hass, SIGNAL_RECIPES_UPDATED)
+    hass.loop.call_soon(async_dispatcher_send, hass, SIGNAL_TIMERS_UPDATED)
     entry.async_create_background_task(
         hass, async_repair_images(hass, store), "food_planning image repair"
     )

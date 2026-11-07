@@ -39,10 +39,20 @@ async def async_import_recipe(
     url: str | None = None,
     text: str | None = None,
     add_to_shopping_list: bool = False,
-) -> Recipe:
-    """Fetch, extract and store a recipe from a URL or pasted text."""
+) -> tuple[Recipe, bool]:
+    """Fetch, extract and store a recipe from a URL or pasted text.
+
+    Returns the recipe and whether it is new. A link that was imported
+    before returns the saved recipe instead, without asking the AI again.
+    """
+    store = entry.runtime_data.store
     if url:
+        if existing := store.find_recipe_by_url(url):
+            return existing, False
         source = await async_fetch_source(hass, url.strip())
+        # Short links (vm.tiktok.com) only match after the redirect.
+        if existing := store.find_recipe_by_url(source.url):
+            return existing, False
     elif text and text.strip():
         source = RecipeSource(text=text.strip())
     else:
@@ -74,7 +84,7 @@ async def async_import_recipe(
     if add_to_shopping_list:
         async_add_recipe_to_shopping(entry, recipe)
     await data.store.async_save()
-    return recipe
+    return recipe, True
 
 
 def async_add_recipe_to_shopping(

@@ -93,16 +93,20 @@ def async_setup_services(hass: HomeAssistant) -> None:
 
     async def import_recipe(call: ServiceCall) -> ServiceResponse:
         entry = _loaded_entry(hass)
-        recipe = await async_import_recipe(
+        recipe, created = await async_import_recipe(
             hass,
             entry,
             url=call.data.get(ATTR_URL),
             text=call.data.get(ATTR_TEXT),
             add_to_shopping_list=call.data[ATTR_ADD_TO_SHOPPING_LIST],
         )
+        if not created and call.data[ATTR_ADD_TO_SHOPPING_LIST]:
+            async_add_recipe_to_shopping(entry, recipe)
+            await entry.runtime_data.store.async_save()
         if not call.return_response:
             return None
         return {
+            "created": created,
             "uid": recipe.uid,
             "title": recipe.title,
             "servings": recipe.servings,

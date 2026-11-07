@@ -18,6 +18,8 @@ const STRINGS = {
     add: "Lägg till",
     importing: "Hämtar recept… det tar några sekunder.",
     imported: (title) => `”${title}” har lagts till.`,
+    exists: (title) => `”${title}” finns redan bland recepten.`,
+    adminOnly: "Bara administratörer kan ändra eller ta bort recept.",
     empty: "Inga recept än. Klistra in en länk eller en recepttext ovan.",
     search: "Sök recept eller ingrediens",
     noMatch: "Inga recept matchar.",
@@ -73,6 +75,8 @@ const STRINGS = {
     add: "Add",
     importing: "Fetching the recipe… this takes a few seconds.",
     imported: (title) => `“${title}” was added.`,
+    exists: (title) => `“${title}” is already in your recipes.`,
+    adminOnly: "Only administrators can change or delete recipes.",
     empty: "No recipes yet. Paste a link or recipe text above.",
     search: "Search recipes or ingredients",
     noMatch: "No recipes match.",
@@ -381,7 +385,8 @@ class FoodPlanningCard extends HTMLElement {
         return_response: true,
       });
       this._input.value = "";
-      this._setStatus(this._t.imported(result?.response?.title || ""));
+      const response = result?.response || {};
+      this._setStatus((response.created === false ? this._t.exists : this._t.imported)(response.title || ""));
     } catch (err) {
       this._setStatus(errorMessage(err), true);
     } finally {
@@ -1565,13 +1570,17 @@ class FoodPlanningRecipeDialog extends HTMLElement {
         this._setStatus("");
         this._render();
       } catch (err) {
-        this._setStatus(errorMessage(err), true);
+        this._setStatus(this._errorText(err), true);
         save.disabled = false;
       }
     });
 
     this._shell(el("h2", { text: t.edit }), form);
     title.focus();
+  }
+
+  _errorText(err) {
+    return err?.code === "unauthorized" ? this._t.adminOnly : errorMessage(err);
   }
 
   async _addToList(button, ingredients) {
@@ -1609,7 +1618,7 @@ class FoodPlanningRecipeDialog extends HTMLElement {
       await this._hass.callWS({ type: `${DOMAIN}/recipes/delete`, uid: this._uid });
       this.close();
     } catch (err) {
-      this._setStatus(errorMessage(err), true);
+      this._setStatus(this._errorText(err), true);
       button.disabled = false;
     }
   }
@@ -1669,8 +1678,8 @@ class FoodPlanningNav extends HTMLElement {
   }
 
   getGridOptions() {
-    // No fixed height: the running timers show under the tabs.
-    return { columns: "full" };
+    // Grows with the running timers shown under the tabs.
+    return { columns: "full", rows: "auto" };
   }
 
   _render() {

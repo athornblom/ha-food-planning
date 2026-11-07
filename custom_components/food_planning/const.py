@@ -18,6 +18,13 @@ CONF_UPDATE_PANTRY: Final = "update_pantry"
 # Shown on the settings page, but stored with the recipes, not as an option.
 CONF_CATEGORIES: Final = "categories"
 DEFAULT_UPDATE_PANTRY: Final = True
+CONF_ADMIN_ONLY: Final = "admin_only"
+DEFAULT_ADMIN_ONLY: Final = False
+
+# Sent after the recipes/lists or the timers change, by whichever config
+# entry is loaded, so open dashboards keep updating across reloads.
+SIGNAL_RECIPES_UPDATED: Final = f"{DOMAIN}_recipes_updated"
+SIGNAL_TIMERS_UPDATED: Final = f"{DOMAIN}_timers_updated"
 
 SERVICE_IMPORT_RECIPE: Final = "import_recipe"
 SERVICE_ADD_TO_SHOPPING_LIST: Final = "add_recipe_to_shopping_list"
