@@ -519,7 +519,11 @@ const UNIT_SECONDS = "sekunder|sekund|sek|seconds|second|secs|sec";
 const TIME_RE = (() => {
   const words = Object.keys(TIME_WORDS).sort((a, b) => b.length - a.length).join("|");
   const num = `(\\d+(?:[.,]\\d+)?(?:\\s*½)?|½|${words})`;
-  const end = "(?![\\p{L}\\d])";
+  // Not a time to wait: "två minuter kortare än anvisat", "5 min less".
+  const relative =
+    "(?!\\s+(?:kortare|längre|mindre|tidigare|senare|" +
+    "shorter|longer|less|earlier|later)(?![\\p{L}]))";
+  const end = `(?![\\p{L}\\d])${relative}`;
   const main =
     `(?<![\\p{L}\\d])${num}(?:\\s*(?:-|–|—|till|to|or|eller)\\s*${num})?` +
     `\\s*(${UNIT_HOURS}|${UNIT_MINUTES}|${UNIT_SECONDS})${end}` +
