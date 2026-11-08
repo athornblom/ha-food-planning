@@ -1935,6 +1935,27 @@ const NAV_ITEMS = [
   { key: "recipes", path: "recept", icon: "📖" },
 ];
 
+// Opening the dashboard lands on its first view; send it on to the tab this
+// device used last instead. Only on entering the dashboard, not when a tab
+// is clicked, and a link straight to another tab is left alone.
+const LAST_VIEW_KEY = "food_planning.last_view:";
+let navSwitching = false;
+
+function navLocation() {
+  const parts = window.location.pathname.split("/").filter(Boolean);
+  const last = parts[parts.length - 1];
+  if (NAV_ITEMS.some((item) => item.path === last)) {
+    return { base: "/" + parts.slice(0, -1).join("/"), current: last };
+  }
+  // The dashboard's own URL without a view shows the first view.
+  return { base: "/" + parts.join("/"), current: NAV_ITEMS[0].path };
+}
+
+function navigateTo(path) {
+  window.history.replaceState(window.history.state, "", path);
+  window.dispatchEvent(new CustomEvent("location-changed", { detail: { replace: true } }));
+}
+
 /**
  * Tabs for the Food Planning views. Switching replaces the history entry,
  * so the view's back arrow leaves the dashboard instead of going back
@@ -1957,6 +1978,30 @@ class FoodPlanningNav extends HTMLElement {
     if (this._timers) this._timers.hass = hass;
   }
 
+  connectedCallback() {
+    const switching = navSwitching;
+    navSwitching = false;
+    if (this._config?.active && this._config.active !== navLocation().current) return; // e.g. edit-mode preview
+    const { base, current } = navLocation();
+    const key = LAST_VIEW_KEY + base;
+    let last = null;
+    try {
+      last = window.localStorage.getItem(key);
+    } catch (_err) {
+      /* storage blocked */
+    }
+    if (!switching && current === NAV_ITEMS[0].path && last && last !== current && NAV_ITEMS.some((i) => i.path === last)) {
+      navSwitching = true;
+      navigateTo(`${base}/${last}`);
+      return;
+    }
+    try {
+      window.localStorage.setItem(key, current);
+    } catch (_err) {
+      /* storage blocked */
+    }
+  }
+
   getCardSize() {
     return 1;
   }
@@ -1967,9 +2012,7 @@ class FoodPlanningNav extends HTMLElement {
   }
 
   _render() {
-    const parts = window.location.pathname.split("/").filter(Boolean);
-    const current = parts[parts.length - 1];
-    const base = "/" + parts.slice(0, -1).join("/");
+    const { base, current } = navLocation();
     const nav = el("nav", { attrs: { role: "tablist" } });
     for (const item of NAV_ITEMS) {
       const active = item.path === (this._config.active || current);
@@ -1979,8 +2022,8 @@ class FoodPlanningNav extends HTMLElement {
       }, el("span", { cls: "icon", text: item.icon }), el("span", { text: this._t[item.key] }));
       tab.addEventListener("click", () => {
         if (active) return;
-        window.history.replaceState(window.history.state, "", `${base}/${item.path}`);
-        window.dispatchEvent(new CustomEvent("location-changed", { detail: { replace: true } }));
+        navSwitching = true;
+        navigateTo(`${base}/${item.path}`);
       });
       nav.append(tab);
     }

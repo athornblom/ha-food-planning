@@ -92,7 +92,8 @@ The dashboard is built from three cards, also usable on their own:
 - `custom:food-planning-cook-card` (on the Hemma view): which recipes can
   be cooked with what's at home, and which are close (missing at most
   `almost: 2` ingredients) with a **+ Handla** button for what's missing.
-- `custom:food-planning-nav`: the tabs between the views.
+- `custom:food-planning-nav`: the tabs between the views. Opening the
+  dashboard returns to the tab this device used last.
 - `custom:food-planning-card`: the recipes.
 
 The recipe card:
