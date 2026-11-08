@@ -10,6 +10,7 @@
           "ai_task_entity": "AI task entity",
           "language": "Recipe language",
           "merge_shopping": "Merge duplicate shopping items",
+          "sort_shopping": "Sort the shopping list by store section",
           "update_pantry": "Update At home when cooked",
           "admin_only": "Only administrators change recipes"
         },
@@ -17,6 +18,7 @@
           "ai_task_entity": "Leave empty to use the preferred AI task entity from Settings > System > General.",
           "language": "Imported recipes are written in this language, e.g. Swedish.",
           "merge_shopping": "When items are added, the AI merges duplicates, e.g. \"2 msk olivolja\" and \"15 ml olivolja\" into \"3 msk olivolja\".",
+          "sort_shopping": "Items are ordered the way a typical grocery store is walked, fruit and vegetables first and frozen food last. The section is worked out along with the product name, so it needs no extra AI calls. Turn off to order the list yourself.",
           "update_pantry": "When a recipe is marked as cooked, the AI subtracts what it used from the At home list.",
           "admin_only": "When on, only administrator users can edit or delete recipes. Everyone can still import, shop and cook."
         }
@@ -30,6 +32,7 @@
           "ai_task_entity": "AI task entity",
           "language": "Recipe language",
           "merge_shopping": "Merge duplicate shopping items",
+          "sort_shopping": "Sort the shopping list by store section",
           "update_pantry": "Update At home when cooked",
           "categories": "Recipe categories",
           "admin_only": "Only administrators change recipes"
@@ -38,6 +41,7 @@
           "ai_task_entity": "Leave empty to use the preferred AI task entity from Settings > System > General.",
           "language": "Imported recipes are written in this language, e.g. Swedish.",
           "merge_shopping": "When items are added, the AI merges duplicates, e.g. \"2 msk olivolja\" and \"15 ml olivolja\" into \"3 msk olivolja\".",
+          "sort_shopping": "Items are ordered the way a typical grocery store is walked, fruit and vegetables first and frozen food last. The section is worked out along with the product name, so it needs no extra AI calls. Turn off to order the list yourself.",
           "update_pantry": "When a recipe is marked as cooked, the AI subtracts what it used from the At home list.",
           "categories": "One per line. The AI picks from these when importing. Removing one takes it off its recipes.",
           "admin_only": "When on, only administrator users can edit or delete recipes. Everyone can still import, shop and cook."

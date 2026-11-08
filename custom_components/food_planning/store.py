@@ -121,6 +121,30 @@ _EN_DESCRIPTIONS = {
 }
 DEFAULT_CATEGORY_DESCRIPTIONS = _SV_DESCRIPTIONS | _EN_DESCRIPTIONS
 
+# Store sections in the order a typical Swedish grocery store is walked,
+# from the entrance (fruit and vegetables) to the tills. The shopping list
+# is sorted by them.
+SECTIONS: dict[str, str] = {
+    "fruit_veg": "fruit, vegetables, fresh herbs, potatoes",
+    "bread": "bread, crispbread, tortillas, bakery",
+    "meat": "fresh meat, poultry, mince",
+    "deli": "cold cuts, sausages, bacon, ham",
+    "fish": "fresh and smoked fish, seafood",
+    "dairy": "milk, cream, yoghurt, butter, eggs",
+    "cheese": "cheese",
+    "chilled": "other chilled food: fresh pasta, tofu, ready meals, dips",
+    "pantry": "pasta, rice, flour, canned food, stock, oil, vinegar, sauces",
+    "spices": "dried spices and herbs, salt, pepper",
+    "baking": "sugar, baking powder, yeast, chocolate for baking",
+    "breakfast": "cereal, muesli, oats, jam, honey, coffee, tea",
+    "snacks": "crisps, nuts, sweets, biscuits",
+    "drinks": "soft drinks, juice, water, beer",
+    "frozen": "frozen food, ice cream",
+    "household": "household, hygiene, non-food",
+    "other": "anything else",
+}
+DEFAULT_SECTION = "other"
+
 # The two item lists: what to buy, and what's at home.
 SHOPPING = "shopping"
 PANTRY = "pantry"
@@ -250,6 +274,8 @@ class FoodPlanningStore:
         # schalottenlökar" -> "schalottenlök". Filled by the AI once per new
         # text; recipes are matched against At home by product name.
         self.names: dict[str, str] = {}
+        # Item text (see name_key) -> store section (see SECTIONS).
+        self.sections: dict[str, str] = {}
         self.lists: dict[str, list[ShoppingItem]] = {SHOPPING: [], PANTRY: []}
         self._listeners: list[Callable[[], None]] = []
 
@@ -284,6 +310,11 @@ class FoodPlanningStore:
             k: v
             for k, v in (data.get("names") or {}).items()
             if isinstance(k, str) and isinstance(v, str)
+        }
+        store.sections = {
+            k: v
+            for k, v in (data.get("sections") or {}).items()
+            if isinstance(k, str) and v in SECTIONS
         }
         for list_name in LISTS:
             store.lists[list_name] = [
@@ -326,6 +357,7 @@ class FoodPlanningStore:
                 "categories": self.categories,
                 "category_descriptions": self.category_descriptions,
                 "names": self.names,
+                "sections": self.sections,
                 **{
                     name: [asdict(i) for i in items]
                     for name, items in self.lists.items()
@@ -361,12 +393,34 @@ class FoodPlanningStore:
         """Give a rewritten item (new amount, merged) its old product name."""
         if (name := self.product_name(old_text)) is not None:
             self.names.setdefault(name_key(new_text), name)
+        if (section := self.sections.get(name_key(old_text))) is not None:
+            self.sections.setdefault(name_key(new_text), section)
 
     def prune_names(self) -> None:
         """Forget names of texts no longer on any recipe or list."""
         used = {name_key(t) for r in self.recipes for t in r.ingredients}
         used.update(name_key(i.summary) for items in self.lists.values() for i in items)
         self.names = {k: v for k, v in self.names.items() if k in used}
+        self.sections = {k: v for k, v in self.sections.items() if k in used}
+
+    def sort_shopping(self) -> bool:
+        """Order the open shopping items by store section, keeping the order
+        within a section. Items without a known section go last. Returns True
+        if the order changed.
+        """
+        order = {section: i for i, section in enumerate(SECTIONS)}
+        unknown = len(order)
+        items = self.shopping
+        open_items = [i for i in items if i.status != STATUS_COMPLETED]
+        done = [i for i in items if i.status == STATUS_COMPLETED]
+        open_items.sort(
+            key=lambda i: order.get(self.sections.get(name_key(i.summary), ""), unknown)
+        )
+        new = open_items + done
+        if [i.uid for i in new] == [i.uid for i in items]:
+            return False
+        items[:] = new
+        return True
 
     # Recipes
 

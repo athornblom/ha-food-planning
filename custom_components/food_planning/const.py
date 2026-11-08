@@ -18,6 +18,8 @@ CONF_UPDATE_PANTRY: Final = "update_pantry"
 # Shown on the settings page, but stored with the recipes, not as an option.
 CONF_CATEGORIES: Final = "categories"
 DEFAULT_UPDATE_PANTRY: Final = True
+CONF_SORT_SHOPPING: Final = "sort_shopping"
+DEFAULT_SORT_SHOPPING: Final = True
 CONF_ADMIN_ONLY: Final = "admin_only"
 DEFAULT_ADMIN_ONLY: Final = False
 

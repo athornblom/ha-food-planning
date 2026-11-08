@@ -10,6 +10,7 @@
           "ai_task_entity": "AI-uppgiftsentitet",
           "language": "Receptspråk",
           "merge_shopping": "Slå ihop dubbletter i inköpslistan",
+          "sort_shopping": "Sortera inköpslistan efter butikens avdelningar",
           "update_pantry": "Uppdatera Hemma när något lagas",
           "admin_only": "Bara administratörer ändrar recept"
         },
@@ -17,6 +18,7 @@
           "ai_task_entity": "Lämna tomt för att använda den föredragna AI-uppgiftsentiteten under Inställningar > System > Allmänt.",
           "language": "Importerade recept skrivs på det här språket, t.ex. Swedish.",
           "merge_shopping": "När något läggs till slår AI:n ihop dubbletter, t.ex. \"2 msk olivolja\" och \"15 ml olivolja\" till \"3 msk olivolja\".",
+          "sort_shopping": "Varorna ordnas som man går i en vanlig matbutik: frukt och grönt först, frys sist. Avdelningen tas fram tillsammans med produktnamnet, så det kräver inga extra AI-anrop. Stäng av för att ordna listan själv.",
           "update_pantry": "När ett recept markeras som lagat drar AI:n av det som gick åt från listan Hemma.",
           "admin_only": "När det är på kan bara administratörer redigera eller ta bort recept. Alla kan fortfarande importera, handla och laga."
         }
@@ -30,6 +32,7 @@
           "ai_task_entity": "AI-uppgiftsentitet",
           "language": "Receptspråk",
           "merge_shopping": "Slå ihop dubbletter i inköpslistan",
+          "sort_shopping": "Sortera inköpslistan efter butikens avdelningar",
           "update_pantry": "Uppdatera Hemma när något lagas",
           "categories": "Receptkategorier",
           "admin_only": "Bara administratörer ändrar recept"
@@ -38,6 +41,7 @@
           "ai_task_entity": "Lämna tomt för att använda den föredragna AI-uppgiftsentiteten under Inställningar > System > Allmänt.",
           "language": "Importerade recept skrivs på det här språket, t.ex. Swedish.",
           "merge_shopping": "När något läggs till slår AI:n ihop dubbletter, t.ex. \"2 msk olivolja\" och \"15 ml olivolja\" till \"3 msk olivolja\".",
+          "sort_shopping": "Varorna ordnas som man går i en vanlig matbutik: frukt och grönt först, frys sist. Avdelningen tas fram tillsammans med produktnamnet, så det kräver inga extra AI-anrop. Stäng av för att ordna listan själv.",
           "update_pantry": "När ett recept markeras som lagat drar AI:n av det som gick åt från listan Hemma.",
           "categories": "En per rad. AI:n väljer bland dessa vid import. Tar du bort en försvinner den från recepten.",
           "admin_only": "När det är på kan bara administratörer redigera eller ta bort recept. Alla kan fortfarande importera, handla och laga."

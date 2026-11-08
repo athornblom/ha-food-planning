@@ -154,6 +154,15 @@ type: custom:food-planning-card
 is a normal to-do list: use it with the to-do card, the companion app and
 Assist ("lägg till mjölk på inköpslistan").
 
+**Sorted the way you walk through the store.** Open items are ordered by
+store section, as in a typical Swedish grocery store: frukt och grönt,
+bröd, kött, chark, fisk, mejeri, ost, kyl, skafferi, kryddor, bakning,
+frukost, snacks, dryck, frys and last hushåll. The section is worked out
+together with the product name, once per item text, so it costs no extra
+AI calls. A new item jumps into its section a moment after it's added.
+Turn it off under **Configure** to order the list yourself (with it on, a
+manual reorder is undone).
+
 **Duplicates are merged by the AI.** A couple of seconds after items are
 added (from a recipe, by hand or by voice), the open items are sent to the
 AI task, which merges items that are the same product, e.g. "2 msk
@@ -232,6 +241,7 @@ Finished timers stay (ringing) until dismissed, at most 15 minutes.
   `Swedish`).
 - **Merge duplicate shopping items:** on by default, see above (applies to
   At home too).
+- **Sort the shopping list by store section:** on by default, see above.
 - **Update At home when cooked:** on by default, see above.
 - **Only administrators change recipes:** off by default. When on, only
   administrator users can edit or delete recipes; everyone can still
