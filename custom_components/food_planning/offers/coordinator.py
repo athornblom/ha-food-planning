@@ -43,7 +43,11 @@ STORAGE_VERSION = 1
 UPDATE_INTERVAL = timedelta(hours=6)
 # ICA flyers go live at midnight, Willys' around 02:00; fetch after that.
 MONDAY_FETCH = (2, 30)
+# After a failed naming batch, try again after this long, doubling.
 NAMING_RETRY = 600
+MAX_NAMING_RETRY = 6 * 3600
+# Offers named per AI call; small enough for a short model answer.
+NAMING_BATCH = 40
 STORE_LOOKUP_TIMEOUT = 10
 
 
@@ -136,6 +140,7 @@ class OffersCoordinator(DataUpdateCoordinator[OffersData]):
         self._index: dict[str, list[tuple[Offer, StoreInfo]]] = {}
         self._unsubs: list[CALLBACK_TYPE] = []
         self._naming_retry: CALLBACK_TYPE | None = None
+        self._naming_delay = NAMING_RETRY
 
     async def async_load(self) -> None:
         """Start from the saved offers, so a restart needs no fetch."""
@@ -323,19 +328,32 @@ class OffersCoordinator(DataUpdateCoordinator[OffersData]):
             key = heading_key(offer.heading, offer.description)
             if key not in self.names:
                 todo.setdefault(key, (key, offer.heading, offer.description))
-        if todo:
+        items = list(todo.values())
+        # Batch by batch, so a failure keeps what was named and the
+        # dashboards get matches as soon as the first batch is done.
+        for start in range(0, len(items), NAMING_BATCH):
+            batch = items[start : start + NAMING_BATCH]
             try:
-                self.names.update(
-                    await async_name_offers(
-                        self.hass, self.config_entry, list(todo.values())
-                    )
-                )
+                named = await async_name_offers(self.hass, self.config_entry, batch)
             except HomeAssistantError as err:
                 _LOGGER.warning(
-                    "Could not name offers, retrying in %d s: %s", NAMING_RETRY, err
+                    "Could not name offers, retrying in %d s: %s",
+                    self._naming_delay,
+                    err,
                 )
-                self._schedule_naming(NAMING_RETRY)
+                self._schedule_naming(self._naming_delay)
+                self._naming_delay = min(self._naming_delay * 2, MAX_NAMING_RETRY)
+                break
+            # An offer the AI skipped matches nothing, and isn't asked again.
+            self.names.update({key: named.get(key, []) for key, _h, _d in batch})
             await self._async_save(data)
+            self._publish()
+        else:
+            self._naming_delay = NAMING_RETRY
+        self._publish()
+
+    @callback
+    def _publish(self) -> None:
         self._rebuild_index()
         self.async_update_listeners()
         async_dispatcher_send(self.hass, SIGNAL_OFFERS_UPDATED)

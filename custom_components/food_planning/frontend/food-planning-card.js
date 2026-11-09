@@ -100,6 +100,8 @@ const STRINGS = {
     weekAdd: "＋ Lägg i veckan",
     weekIn: "✓ I veckans middagar",
     weekAddedToast: "Lagd i veckans middagar.",
+    weekNoMore: "Inga fler recept att föreslå just nu. Recept som lagats de senaste två veckorna, kakor och liknande räknas inte. Lägg till fler recept så blir förslagen bättre.",
+    weekPlanned: (n) => `${n} ${n === 1 ? "nytt förslag" : "nya förslag"}.`,
   },
   en: {
     lang: "en",
@@ -190,6 +192,8 @@ const STRINGS = {
     weekAdd: "＋ Add to the week",
     weekIn: "✓ In this week's dinners",
     weekAddedToast: "Added to this week's dinners.",
+    weekNoMore: "No more recipes to suggest right now. Recipes cooked in the last two weeks, cakes and the like don't count. Add more recipes for better suggestions.",
+    weekPlanned: (n) => `${n} new ${n === 1 ? "suggestion" : "suggestions"}.`,
   },
 };
 
@@ -997,7 +1001,8 @@ class FoodPlanningCard extends HTMLElement {
     try {
       const result = await this._hass.callWS({ type: `${DOMAIN}/week/update`, action, ...(uid ? { uid } : {}) });
       if (action === "shop") this._setStatus(this._t.weekShopped(result?.added ?? 0));
-      else if (action === "plan") this._setStatus("");
+      else if (action === "plan") this._setStatus(result?.added ? this._t.weekPlanned(result.added) : this._t.weekNoMore);
+      if (button) button.disabled = false;
     } catch (err) {
       this._setStatus(errorMessage(err), true);
       if (button) button.disabled = false;

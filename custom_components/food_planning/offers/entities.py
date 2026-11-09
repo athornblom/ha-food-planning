@@ -25,6 +25,8 @@ if TYPE_CHECKING:
     from ..data import FoodPlanningConfigEntry
 
 MAX_PRODUCTS = 15
+# Offers listed on a store's sensor; the rest come from get_offers.
+MAX_STORE_OFFERS = 20
 
 
 def offer_sensors(
@@ -255,9 +257,14 @@ class _StoreEntity(_OfferEntity):
 
 
 class StoreOffersSensor(_StoreEntity, SensorEntity):
-    """How many offers a store has right now. The offers come from actions."""
+    """How many offers a store has right now, and the biggest discounts.
+
+    Only the top offers are listed (attributes are limited in size); all of
+    them come from the get_offers action.
+    """
 
     _attr_native_unit_of_measurement = "st"
+    _unrecorded_attributes = frozenset({"top_offers"})
 
     def __init__(
         self,
@@ -293,6 +300,20 @@ class StoreOffersSensor(_StoreEntity, SensorEntity):
             "with_discount": len(discounts),
             "max_discount_percent": max(discounts, default=None),
             "fetched_at": self.coordinator.data.fetched_at,
+            "top_offers": [
+                {
+                    "name": o.heading,
+                    "price": o.price,
+                    "pieces": o.pieces,
+                    "quantity": o.quantity,
+                    "ordinary_price": o.ordinary_price,
+                    "discount_percent": o.discount_percent,
+                    "member": o.member,
+                }
+                for o in sorted(
+                    offers, key=lambda o: (-(o.discount_percent or 0), o.unit_price)
+                )[:MAX_STORE_OFFERS]
+            ],
         }
 
 

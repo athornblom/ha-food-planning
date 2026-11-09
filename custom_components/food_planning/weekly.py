@@ -205,6 +205,8 @@ class WeeklyPlanner:
         self._hass = hass
         self._entry = entry
         self._unsubs: list[CALLBACK_TYPE] = []
+        # How many dinners the last plan added; the dashboard says when none.
+        self.last_added = 0
         self._event_listeners: list[Callable[[str, dict[str, Any]], None]] = []
 
     @property
@@ -254,11 +256,12 @@ class WeeklyPlanner:
         due = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
         due -= timedelta(days=(now.weekday() - weekday) % 7)
         if self._store.week.week != week_id(now) and now >= due:
-            self._unsubs.append(
-                async_call_later(
-                    self._hass, STARTUP_DELAY, lambda _now: self._run_new_week()
-                )
-            )
+
+            @callback
+            def _catch_up(_now: datetime) -> None:
+                self._run_new_week()
+
+            self._unsubs.append(async_call_later(self._hass, STARTUP_DELAY, _catch_up))
 
     @callback
     def _run_new_week(self) -> None:
@@ -424,8 +427,11 @@ class WeeklyPlanner:
             )
         store.week = plan
         free = count - len([d for d in plan.dinners if d.cooked_at is None])
+        self.last_added = 0
         if free > 0:
-            plan.dinners.extend(await self._async_pick(plan, free))
+            picked = await self._async_pick(plan, free)
+            plan.dinners.extend(picked)
+            self.last_added = len(picked)
         plan.created = dt_util.utcnow().isoformat()
         await store.async_save()
         self.fire(
@@ -436,8 +442,15 @@ class WeeklyPlanner:
 
     async def _async_pick(self, plan: WeekPlan, count: int) -> list[WeekDinner]:
         exclude = {d.recipe_uid for d in plan.dinners if d.recipe_uid}
-        exclude.update(plan.removed)
-        cands = self.candidates(exclude)[:CANDIDATES]
+        cands = self.candidates(exclude | set(plan.removed))[:CANDIDATES]
+        if len(cands) < count and plan.removed:
+            # Too few left: better to suggest something removed earlier.
+            uids = {c.recipe.uid for c in cands}
+            extra = self.candidates(exclude | uids)[: count - len(cands)]
+            cands += extra
+            plan.removed = [
+                uid for uid in plan.removed if uid not in {c.recipe.uid for c in extra}
+            ]
         if not cands:
             return []
         if len(cands) <= count:

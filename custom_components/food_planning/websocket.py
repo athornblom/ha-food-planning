@@ -400,7 +400,7 @@ async def ws_update_week(
         except HomeAssistantError as err:
             connection.send_error(msg["id"], "plan_failed", str(err))
             return
-        connection.send_result(msg["id"])
+        connection.send_result(msg["id"], {"added": planner.last_added})
         return
     if action == "shop":
         added = planner.add_to_shopping()

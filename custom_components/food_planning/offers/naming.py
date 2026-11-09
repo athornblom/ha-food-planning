@@ -20,7 +20,7 @@ from ..store import ALWAYS_AVAILABLE
 if TYPE_CHECKING:
     from ..data import FoodPlanningConfigEntry
 
-BATCH_SIZE = 120
+BATCH_SIZE = 40
 MAX_KNOWN_NAMES = 500
 DESCRIPTION_CHARS = 80
 
