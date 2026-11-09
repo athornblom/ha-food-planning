@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
 import voluptuous as vol
@@ -14,6 +15,7 @@ from homeassistant.config_entries import (
     OptionsFlow,
 )
 from homeassistant.core import callback
+from homeassistant.data_entry_flow import section
 from homeassistant.helpers.selector import (
     BooleanSelector,
     EntitySelector,
@@ -68,6 +70,19 @@ from .const import (
 from .offers.api import OffersApiError
 from .offers.coordinator import distance_km, home_location, make_client
 
+WEEKLY_KEYS = (
+    CONF_WEEKLY,
+    CONF_WEEKLY_DAY,
+    CONF_WEEKLY_TIME,
+    CONF_WEEKLY_COUNT,
+    CONF_WEEKLY_IDEAS,
+)
+OFFERS_KEYS = (
+    CONF_OFFERS,
+    CONF_OFFERS_RADIUS,
+    CONF_OFFERS_MIN_DISCOUNT,
+    CONF_OFFERS_STORES,
+)
 OPTIONS_SCHEMA = vol.Schema(
     {
         # Empty means: use the AI task entity chosen as preferred in
@@ -88,15 +103,12 @@ OPTIONS_SCHEMA = vol.Schema(
         vol.Required(CONF_ADMIN_ONLY, default=DEFAULT_ADMIN_ONLY): BooleanSelector(),
     }
 )
-# Settings page only: which features to set up in the next steps.
-FEATURES_SCHEMA = vol.Schema(
-    {
-        vol.Required(CONF_WEEKLY, default=DEFAULT_WEEKLY): BooleanSelector(),
-        vol.Required(CONF_OFFERS, default=DEFAULT_OFFERS): BooleanSelector(),
-    }
-)
+SECTION_WEEKLY = "weekly"
+SECTION_OFFERS = "offers_section"
+STORES_TIMEOUT = 15
 WEEKLY_SCHEMA = vol.Schema(
     {
+        vol.Required(CONF_WEEKLY, default=DEFAULT_WEEKLY): BooleanSelector(),
         vol.Required(CONF_WEEKLY_DAY, default=DEFAULT_WEEKLY_DAY): SelectSelector(
             SelectSelectorConfig(
                 options=list(WEEKDAYS),
@@ -118,6 +130,7 @@ WEEKLY_SCHEMA = vol.Schema(
 )
 OFFERS_SCHEMA = vol.Schema(
     {
+        vol.Required(CONF_OFFERS, default=DEFAULT_OFFERS): BooleanSelector(),
         vol.Required(CONF_OFFERS_RADIUS, default=DEFAULT_OFFERS_RADIUS): NumberSelector(
             NumberSelectorConfig(
                 min=0.5,
@@ -168,21 +181,52 @@ class FoodPlanningConfigFlow(ConfigFlow, domain=DOMAIN):
 
 
 class FoodPlanningOptionsFlow(OptionsFlow):
-    """Settings: general, then Veckans middagar and offers when turned on."""
+    """All settings on one page; Veckans middagar and offers in sections."""
 
     def __init__(self) -> None:
         """Initialize the flow."""
-        self._options: dict[str, Any] = {}
+        # Radius the store list was fetched for; a new radius fetches again.
+        self._stores_radius: float | None = None
 
-    def _suggested(self, schema: vol.Schema) -> vol.Schema:
-        return self.add_suggested_values_to_schema(
-            schema, dict(self.config_entry.options) | self._options
-        )
+    async def _store_options(
+        self, radius: float, selected: list[str]
+    ) -> tuple[list[SelectOptionDict], bool]:
+        """Stores near home as "Chain – street (0,8 km)", nearest first.
+
+        Returns the options and whether the flyer API answered.
+        """
+        ok = True
+        found: list[tuple[float, Any]] = []
+        try:
+            async with asyncio.timeout(STORES_TIMEOUT):
+                stores = await make_client(self.hass, radius).grocery_stores()
+            home = home_location(self.hass)
+            found = sorted(
+                ((distance_km(*home, s.latitude, s.longitude), s) for s in stores),
+                key=lambda d: d[0],
+            )
+        except (OffersApiError, TimeoutError):
+            ok = False
+        options = [
+            SelectOptionDict(
+                value=s.id,
+                label=f"{s.title} – {s.street} ({km:.1f} km)".replace(".", ","),
+            )
+            for km, s in found
+        ]
+        known = {o["value"] for o in options}
+        # Keep stores picked earlier, also when outside the radius or offline.
+        options += [
+            SelectOptionDict(value=sid, label=sid)
+            for sid in selected
+            if sid not in known
+        ]
+        return options, ok
 
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """Show the settings. Options are read when used, so no reload.
+        """Show the settings. Saving reloads the integration.
 
         The recipe categories live with the recipes (in the integration's
         storage), not in the options, so they're only shown while loaded.
@@ -192,113 +236,57 @@ class FoodPlanningOptionsFlow(OptionsFlow):
             if self.config_entry.state is ConfigEntryState.LOADED
             else None
         )
+        current = dict(self.config_entry.options)
         if user_input is not None:
-            if store is not None and CONF_CATEGORIES in user_input:
-                store.set_categories(user_input.pop(CONF_CATEGORIES).splitlines())
+            values = dict(user_input)
+            for key in (SECTION_WEEKLY, SECTION_OFFERS):
+                values |= values.pop(key, {})
+            radius = float(values.get(CONF_OFFERS_RADIUS, DEFAULT_OFFERS_RADIUS))
+            if values.get(CONF_OFFERS) and radius != self._stores_radius:
+                # The store list was for another radius: show it again.
+                return await self._async_show(store, current | values)
+            if store is not None and CONF_CATEGORIES in values:
+                store.set_categories(values.pop(CONF_CATEGORIES).splitlines())
                 await store.async_save()
-            self._options = dict(self.config_entry.options) | user_input
-            return await self._async_next("init")
+            return self.async_create_entry(data=current | values)
+        return await self._async_show(store, current)
 
-        schema = OPTIONS_SCHEMA.extend(FEATURES_SCHEMA.schema)
-        suggested = dict(self.config_entry.options)
-        if store is not None:
-            schema = schema.extend(
-                {
-                    vol.Optional(CONF_CATEGORIES): TextSelector(
-                        TextSelectorConfig(multiline=True)
-                    )
-                }
-            )
-            suggested[CONF_CATEGORIES] = "\n".join(store.categories)
-        return self.async_show_form(
-            step_id="init",
-            data_schema=self.add_suggested_values_to_schema(schema, suggested),
-        )
-
-    async def _async_next(self, done: str) -> ConfigFlowResult:
-        """The next step for the features turned on, or save."""
-        steps = ["init"]
-        if self._options.get(CONF_WEEKLY, DEFAULT_WEEKLY):
-            steps.append("weekly")
-        if self._options.get(CONF_OFFERS, DEFAULT_OFFERS):
-            steps.append("offers")
-        following = steps[steps.index(done) + 1 :] if done in steps else []
-        if not following:
-            return self.async_create_entry(data=self._options)
-        return await getattr(self, f"async_step_{following[0]}")()
-
-    async def async_step_weekly(
-        self, user_input: dict[str, Any] | None = None
-    ) -> ConfigFlowResult:
-        """When and how many dinners to suggest each week."""
-        if user_input is not None:
-            self._options |= user_input
-            return await self._async_next("weekly")
-        return self.async_show_form(
-            step_id="weekly", data_schema=self._suggested(WEEKLY_SCHEMA)
-        )
-
-    async def async_step_offers(
-        self, user_input: dict[str, Any] | None = None
-    ) -> ConfigFlowResult:
-        """How far from home to look for stores, and what counts as a deal."""
-        if user_input is not None:
-            self._options |= user_input
-            return await self.async_step_stores()
-        return self.async_show_form(
-            step_id="offers", data_schema=self._suggested(OFFERS_SCHEMA)
-        )
-
-    async def async_step_stores(
-        self, user_input: dict[str, Any] | None = None
-    ) -> ConfigFlowResult:
-        """Pick stores near home: "Chain – street (0,8 km)"."""
-        if user_input is not None:
-            self._options[CONF_OFFERS_STORES] = user_input.get(
-                CONF_OFFERS_STORES, self._options.get(CONF_OFFERS_STORES) or []
-            )
-            return await self._async_next("offers")
-        radius = float(self._options.get(CONF_OFFERS_RADIUS, DEFAULT_OFFERS_RADIUS))
-        selected = list(self._options.get(CONF_OFFERS_STORES) or [])
-        try:
-            stores = await make_client(self.hass, radius).grocery_stores()
-        except OffersApiError:
-            return self.async_show_form(
-                step_id="stores",
-                data_schema=vol.Schema({}),
-                errors={"base": "cannot_fetch_stores"},
-                description_placeholders={"count": "0"},
-            )
-        home = home_location(self.hass)
-        found = sorted(
-            ((distance_km(*home, s.latitude, s.longitude), s) for s in stores),
-            key=lambda d: d[0],
-        )
-        options = [
-            SelectOptionDict(
-                value=s.id,
-                label=f"{s.title} – {s.street} ({km:.1f} km)".replace(".", ","),
-            )
-            for km, s in found
-        ]
-        known = {o["value"] for o in options}
-        # Keep stores picked earlier that are now outside the radius.
-        options += [
-            SelectOptionDict(value=sid, label=sid)
-            for sid in selected
-            if sid not in known
-        ]
-        schema = vol.Schema(
+    async def _async_show(self, store: Any, values: dict[str, Any]) -> ConfigFlowResult:
+        radius = float(values.get(CONF_OFFERS_RADIUS, DEFAULT_OFFERS_RADIUS))
+        selected = list(values.get(CONF_OFFERS_STORES) or [])
+        store_options, ok = await self._store_options(radius, selected)
+        self._stores_radius = radius
+        offers_schema = OFFERS_SCHEMA.extend(
             {
-                vol.Optional(CONF_OFFERS_STORES, default=selected): SelectSelector(
+                vol.Optional(CONF_OFFERS_STORES, default=[]): SelectSelector(
                     SelectSelectorConfig(
-                        options=options, multiple=True, mode=SelectSelectorMode.LIST
+                        options=store_options,
+                        multiple=True,
+                        mode=SelectSelectorMode.LIST,
                     )
                 )
             }
         )
+        fields: dict[Any, Any] = dict(OPTIONS_SCHEMA.schema)
+        suggested = dict(values)
+        if store is not None:
+            fields[vol.Optional(CONF_CATEGORIES)] = TextSelector(
+                TextSelectorConfig(multiline=True)
+            )
+            suggested.setdefault(CONF_CATEGORIES, "\n".join(store.categories))
+        fields[vol.Required(SECTION_WEEKLY)] = section(
+            WEEKLY_SCHEMA, {"collapsed": not values.get(CONF_WEEKLY, DEFAULT_WEEKLY)}
+        )
+        fields[vol.Required(SECTION_OFFERS)] = section(
+            offers_schema, {"collapsed": not values.get(CONF_OFFERS, DEFAULT_OFFERS)}
+        )
+        suggested[SECTION_WEEKLY] = {k: values[k] for k in WEEKLY_KEYS if k in values}
+        suggested[SECTION_OFFERS] = {k: values[k] for k in OFFERS_KEYS if k in values}
         return self.async_show_form(
-            step_id="stores",
-            data_schema=schema,
-            description_placeholders={"count": str(len(found))},
+            step_id="init",
+            data_schema=self.add_suggested_values_to_schema(
+                vol.Schema(fields), suggested
+            ),
+            errors=None if ok else {"base": "cannot_fetch_stores"},
+            description_placeholders={"count": str(len(store_options))},
         )

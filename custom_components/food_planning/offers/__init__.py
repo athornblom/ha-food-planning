@@ -14,13 +14,14 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.storage import Store
 
 from ..const import CONF_OFFERS, CONF_OFFERS_STORES, DEFAULT_OFFERS
 from .coordinator import STORAGE_KEY, STORAGE_VERSION, OffersCoordinator
 from .entities import offer_binary_sensors, offer_sensors
-from .services import async_setup_offer_services
+from .services import async_setup_offer_services as _async_setup_services
+from .websocket import async_setup_offer_websocket
 
 if TYPE_CHECKING:
     from ..data import FoodPlanningConfigEntry
@@ -32,6 +33,16 @@ __all__ = [
     "async_setup_offer_services",
     "async_setup_offers",
 ]
+
+
+@callback
+def async_setup_offer_services(hass: HomeAssistant) -> None:
+    """Register the offer actions and the Erbjudanden view's API.
+
+    They answer "offers are off" until offers are turned on.
+    """
+    _async_setup_services(hass)
+    async_setup_offer_websocket(hass)
 
 
 async def async_setup_offers(

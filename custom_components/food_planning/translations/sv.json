@@ -35,9 +35,7 @@
           "sort_shopping": "Sortera inköpslistan efter butikens avdelningar",
           "update_pantry": "Uppdatera Hemma när något lagas",
           "categories": "Receptkategorier",
-          "admin_only": "Bara administratörer ändrar recept",
-          "weekly_dinners": "Föreslå middagar varje vecka",
-          "offers": "Visa erbjudanden från butiker"
+          "admin_only": "Bara administratörer ändrar recept"
         },
         "data_description": {
           "ai_task_entity": "Lämna tomt för att använda den föredragna AI-uppgiftsentiteten under Inställningar > System > Allmänt.",
@@ -46,43 +44,42 @@
           "sort_shopping": "Varorna ordnas som man går i en vanlig matbutik: frukt och grönt först, frys sist. Avdelningen tas fram tillsammans med produktnamnet, så det kräver inga extra AI-anrop. Stäng av för att ordna listan själv.",
           "update_pantry": "När ett recept markeras som lagat drar AI:n av det som gick åt från listan Hemma.",
           "categories": "En per rad. AI:n väljer bland dessa vid import. Tar du bort en försvinner den från recepten.",
-          "admin_only": "När det är på kan bara administratörer redigera eller ta bort recept. Alla kan fortfarande importera, handla och laga.",
-          "weekly_dinners": "Några middagsförslag från era egna recept varje vecka, i receptvyn. Ställs in i nästa steg.",
-          "offers": "Markerar ingredienser och varor som är på extrapris i butiker du väljer. Använder ett inofficiellt reklamblads-API som kan sluta fungera."
-        }
-      },
-      "weekly": {
-        "title": "Veckans middagar",
-        "description": "Ett löst urval middagar från era sparade recept. Inget läggs på en viss dag, och fästa eller tillagda middagar byts aldrig ut.",
-        "data": {
-          "weekly_day": "Dag",
-          "weekly_time": "Tid",
-          "weekly_count": "Antal middagar",
-          "weekly_new_ideas": "Tillåt en ny receptidé"
+          "admin_only": "När det är på kan bara administratörer redigera eller ta bort recept. Alla kan fortfarande importera, handla och laga."
         },
-        "data_description": {
-          "weekly_day": "När veckans förslag tas fram. Måndag morgon har de flesta butikers nya reklamblad kommit.",
-          "weekly_count": "Hur många middagar som föreslås.",
-          "weekly_new_ideas": "AI:n får föreslå en rätt som inte finns bland era recept."
-        }
-      },
-      "offers": {
-        "title": "Erbjudanden",
-        "description": "Erbjudandena kommer från butikernas veckoreklamblad, runt din hemadress.",
-        "data": {
-          "offers_radius": "Radie",
-          "offers_min_discount": "Minsta rabatt att markera"
-        },
-        "data_description": {
-          "offers_radius": "Hur långt från hemmet butiker letas efter.",
-          "offers_min_discount": "Erbjudanden med minst så här stor angiven rabatt markeras och prioriteras i veckans middagar."
-        }
-      },
-      "stores": {
-        "title": "Butiker",
-        "description": "{count} matbutiker hittades. ICA, Willys, Hemköp och Coop har ett reklamblad per butik.",
-        "data": {
-          "offers_stores": "Butiker"
+        "sections": {
+          "weekly": {
+            "name": "Veckans middagar",
+            "description": "Ett löst urval middagar från era sparade recept. Inget läggs på en viss dag, och fästa eller tillagda middagar byts aldrig ut.",
+            "data": {
+              "weekly_dinners": "Föreslå middagar varje vecka",
+              "weekly_day": "Dag",
+              "weekly_time": "Tid",
+              "weekly_count": "Antal middagar",
+              "weekly_new_ideas": "Tillåt en ny receptidé"
+            },
+            "data_description": {
+              "weekly_dinners": "Några middagsförslag från era egna recept varje vecka, i receptvyn.",
+              "weekly_day": "När veckans förslag tas fram. Måndag morgon har de flesta butikers nya reklamblad kommit.",
+              "weekly_count": "Hur många middagar som föreslås.",
+              "weekly_new_ideas": "AI:n får föreslå en rätt som inte finns bland era recept."
+            }
+          },
+          "offers_section": {
+            "name": "Erbjudanden",
+            "description": "Erbjudandena kommer från butikernas veckoreklamblad, runt din hemadress.",
+            "data": {
+              "offers": "Visa erbjudanden från butiker",
+              "offers_radius": "Radie",
+              "offers_min_discount": "Minsta rabatt att markera",
+              "offers_stores": "Butiker"
+            },
+            "data_description": {
+              "offers": "Markerar ingredienser och varor som är på extrapris i butiker du väljer. Använder ett inofficiellt reklamblads-API som kan sluta fungera.",
+              "offers_radius": "Hur långt från hemmet butiker letas efter.",
+              "offers_min_discount": "Erbjudanden med minst så här stor angiven rabatt markeras och prioriteras i veckans middagar.",
+              "offers_stores": "Matbutiker inom radien, närmast först. ICA, Willys, Hemköp och Coop har ett reklamblad per butik. Ändrar du radien visas listan igen när du sparar."
+            }
+          }
         }
       }
     },

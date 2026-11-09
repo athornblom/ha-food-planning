@@ -2320,14 +2320,22 @@ if (!customElements.get("food-planning-card")) {
 /* ------------------------------------------------------------------ */
 
 const NAV_STRINGS = {
-  sv: { shopping: "Inköpslista", pantry: "Hemma", recipes: "Recept" },
-  en: { shopping: "Shopping list", pantry: "At home", recipes: "Recipes" },
+  sv: { shopping: "Inköpslista", pantry: "Hemma", recipes: "Recept", offers: "Erbjudanden" },
+  en: { shopping: "Shopping list", pantry: "At home", recipes: "Recipes", offers: "Offers" },
 };
 const NAV_ITEMS = [
   { key: "shopping", path: "inkopslista", icon: "🛒" },
   { key: "pantry", path: "hemma", icon: "🏠" },
   { key: "recipes", path: "recept", icon: "📖" },
+  { key: "offers", path: "erbjudanden", icon: "🏷", offers: true },
 ];
+
+/** Whether the offers module is on: it adds its source sensor. */
+function offersEnabled(hass) {
+  return Object.values(hass?.entities || {}).some(
+    (e) => e.platform === DOMAIN && e.translation_key === "offers_source"
+  );
+}
 
 // Opening the dashboard lands on its first view; send it on to the tab this
 // device used last instead. Only on entering the dashboard, not when a tab
@@ -2370,6 +2378,11 @@ class FoodPlanningNav extends HTMLElement {
   set hass(hass) {
     this._hass = hass;
     if (this._timers) this._timers.hass = hass;
+    const offers = offersEnabled(hass);
+    if (offers !== this._offers) {
+      this._offers = offers;
+      this._render();
+    }
   }
 
   connectedCallback() {
@@ -2384,7 +2397,9 @@ class FoodPlanningNav extends HTMLElement {
     } catch (_err) {
       /* storage blocked */
     }
-    if (!switching && current === NAV_ITEMS[0].path && last && last !== current && NAV_ITEMS.some((i) => i.path === last)) {
+    // The offers view only exists while offers are on.
+    const known = NAV_ITEMS.some((i) => i.path === last && (!i.offers || offersEnabled(this._hass)));
+    if (!switching && current === NAV_ITEMS[0].path && last && last !== current && known) {
       navSwitching = true;
       navigateTo(`${base}/${last}`);
       return;
@@ -2409,6 +2424,7 @@ class FoodPlanningNav extends HTMLElement {
     const { base, current } = navLocation();
     const nav = el("nav", { attrs: { role: "tablist" } });
     for (const item of NAV_ITEMS) {
+      if (item.offers && !this._offers) continue;
       const active = item.path === (this._config.active || current);
       const tab = el("button", {
         cls: active ? "active" : "",
@@ -2435,7 +2451,10 @@ class FoodPlanningNav extends HTMLElement {
       }
       button.active { background: var(--primary-color); color: var(--text-primary-color, #fff); }
       food-planning-timers { margin-top: 8px; }
-      @media (max-width: 420px) { .icon { display: none; } }
+      @media (max-width: 560px) {
+        .icon { display: none; }
+        button { padding: 10px 4px; font-size: 13px; }
+      }
     `,
     });
     this._timers = document.createElement("food-planning-timers");
@@ -2882,6 +2901,305 @@ if (!customElements.get("food-planning-nav")) {
 }
 
 /* ------------------------------------------------------------------ */
+/* Erbjudanden: every current offer at the selected stores             */
+/* ------------------------------------------------------------------ */
+
+const OFFERS_VIEW_STRINGS = {
+  sv: {
+    title: "Erbjudanden",
+    summary: (offers, stores, until) => `${offers} erbjudanden i ${stores} ${stores === 1 ? "butik" : "butiker"}${until ? ` · t.o.m. ${until}` : ""}`,
+    search: "Sök vara, t.ex. kyckling",
+    allStores: "Alla butiker",
+    onlyDiscount: "Bara rabatt",
+    onlyYours: "⭐ Era varor",
+    yours: "⭐ Ni brukar köpa",
+    none: "Inga erbjudanden matchar.",
+    off: "Erbjudanden är avstängt. Slå på det under Food Planning → Konfigurera.",
+    loading: "Hämtar erbjudanden…",
+    showMore: (n) => `Visa fler (${n} till)`,
+    addToList: "Lägg på inköpslistan",
+    added: (name) => `”${name}” lades på inköpslistan.`,
+    storeFailed: "kunde inte hämtas, visar senaste",
+  },
+  en: {
+    title: "Offers",
+    summary: (offers, stores, until) => `${offers} offers at ${stores} ${stores === 1 ? "store" : "stores"}${until ? ` · until ${until}` : ""}`,
+    search: "Search, e.g. chicken",
+    allStores: "All stores",
+    onlyDiscount: "Discount only",
+    onlyYours: "⭐ Your products",
+    yours: "⭐ You usually buy",
+    none: "No offers match.",
+    off: "Offers are turned off. Turn them on under Food Planning → Configure.",
+    loading: "Fetching offers…",
+    showMore: (n) => `Show more (${n} left)`,
+    addToList: "Add to shopping list",
+    added: (name) => `“${name}” was added to the shopping list.`,
+    storeFailed: "couldn't be fetched, showing the last",
+  },
+};
+const OFFERS_PAGE = 60;
+
+/**
+ * Browse all current offers: search, filter by store, discount first.
+ *
+ *   type: custom:food-planning-offers-card
+ */
+class FoodPlanningOffersCard extends HTMLElement {
+  constructor() {
+    super();
+    this.attachShadow({ mode: "open" });
+    this._data = null;
+    this._search = "";
+    this._store = null;
+    this._onlyDiscount = false;
+    this._onlyYours = false;
+    this._limit = OFFERS_PAGE;
+    this._unsub = null;
+  }
+
+  setConfig(config) {
+    this._config = config || {};
+    this._t = OFFERS_VIEW_STRINGS[this._config.language] || OFFERS_VIEW_STRINGS.sv;
+    this._o = OFFER_STRINGS[this._config.language] || OFFER_STRINGS.sv;
+    this._build();
+  }
+
+  set hass(hass) {
+    this._hass = hass;
+    if (!this._unsub && this.isConnected) this._subscribe();
+  }
+
+  connectedCallback() {
+    if (this._hass && !this._unsub) this._subscribe();
+  }
+
+  disconnectedCallback() {
+    if (this._unsub) {
+      this._unsub.then((fn) => fn()).catch(() => {});
+      this._unsub = null;
+    }
+  }
+
+  getCardSize() {
+    return 8;
+  }
+
+  getGridOptions() {
+    return { columns: "full", min_rows: 4 };
+  }
+
+  _subscribe() {
+    this._unsub = this._hass.connection.subscribeMessage(
+      (msg) => {
+        this._data = msg;
+        this._renderList();
+      },
+      { type: `${DOMAIN}/offers/subscribe` }
+    );
+    this._unsub.catch((err) => this._setStatus(errorMessage(err), true));
+  }
+
+  _setStatus(text, isError = false) {
+    this._status.textContent = text || "";
+    this._status.classList.toggle("error", isError);
+    this._status.toggleAttribute("hidden", !text);
+  }
+
+  _build() {
+    const t = this._t;
+    const style = el("style", {
+      text:
+        SHARED_CSS +
+        `
+      ha-card { padding: 16px; }
+      h1 { margin: 0; font-size: 20px; font-weight: 500; }
+      .summary { margin: 4px 0 12px; font-size: 13px; color: var(--secondary-text-color); }
+      .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+      .chip {
+        padding: 6px 12px; font-size: 13px; background: transparent;
+        color: var(--primary-text-color); border: 1px solid var(--divider-color);
+      }
+      .chip.active { background: var(--primary-color); color: var(--text-primary-color, #fff); border-color: transparent; }
+      .chip.discount.active { background: #ffd21f; color: #2a2100; }
+      .grid { display: grid; gap: 10px; margin-top: 14px; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); }
+      .offer {
+        display: grid; grid-template-columns: 72px minmax(0, 1fr); gap: 12px; padding: 10px;
+        border-radius: var(--fp-radius); background: var(--secondary-background-color); align-items: start;
+      }
+      .offer.yours { box-shadow: inset 0 0 0 2px color-mix(in srgb, #ffd21f 70%, transparent); }
+      .offer img, .offer .placeholder {
+        width: 72px; height: 72px; object-fit: contain; border-radius: 8px; background: #fff; font-size: 28px;
+      }
+      .offer .body { min-width: 0; display: grid; gap: 3px; }
+      .offer .head { font-weight: 500; line-height: 1.25; overflow-wrap: anywhere; }
+      .offer .desc { font-size: 12px; color: var(--secondary-text-color); line-height: 1.35;
+        display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+      .offer .price { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 2px; }
+      .offer .ord { font-size: 12px; color: var(--secondary-text-color); }
+      .offer .where { font-size: 12px; color: var(--secondary-text-color); }
+      .offer .mine { font-size: 12px; color: var(--primary-color); }
+      .offer .row { display: flex; align-items: center; gap: 6px; justify-content: space-between; }
+      .offer .add {
+        width: 30px; height: 30px; padding: 0; border-radius: 50%; flex: none;
+        background: transparent; color: var(--primary-color); border: 1px solid var(--divider-color); font-size: 18px;
+      }
+      .more { margin-top: 12px; }
+      .empty { margin: 16px 0 0; color: var(--secondary-text-color); }
+    `,
+    });
+    this._summary = el("p", { cls: "summary", text: t.loading });
+    this._searchInput = el("input", { attrs: { type: "search", placeholder: t.search } });
+    this._searchInput.addEventListener("input", () => {
+      this._search = this._searchInput.value.trim().toLowerCase();
+      this._limit = OFFERS_PAGE;
+      this._renderList();
+    });
+    this._chips = el("div", { cls: "chips" });
+    this._status = el("p", { cls: "status", attrs: { hidden: "" } });
+    this._grid = el("div", { cls: "grid" });
+    this._more = el("button", { cls: "secondary more", attrs: { hidden: "" } });
+    this._more.addEventListener("click", () => {
+      this._limit += OFFERS_PAGE;
+      this._renderList();
+    });
+    this._empty = el("p", { cls: "empty", attrs: { hidden: "" } });
+    const card = el(
+      "ha-card",
+      {},
+      el("h1", { text: this._config.title || t.title }),
+      this._summary,
+      this._searchInput,
+      this._chips,
+      this._status,
+      this._grid,
+      this._more,
+      this._empty
+    );
+    this.shadowRoot.replaceChildren(style, card);
+  }
+
+  _renderChips(stores) {
+    const t = this._t;
+    const chip = (label, active, onClick, cls = "") => {
+      const node = el("button", { cls: `chip ${cls}`, text: label });
+      node.classList.toggle("active", active);
+      node.addEventListener("click", () => {
+        onClick();
+        this._limit = OFFERS_PAGE;
+        this._renderList();
+      });
+      return node;
+    };
+    this._chips.replaceChildren(
+      chip(t.allStores, this._store === null, () => (this._store = null)),
+      ...stores.map((s) => chip(s.title, this._store === s.id, () => (this._store = s.id))),
+      chip(`🏷 ${t.onlyDiscount}`, this._onlyDiscount, () => (this._onlyDiscount = !this._onlyDiscount), "discount"),
+      chip(t.onlyYours, this._onlyYours, () => (this._onlyYours = !this._onlyYours))
+    );
+  }
+
+  _renderList() {
+    const t = this._t;
+    const data = this._data;
+    if (!data) return;
+    if (!data.enabled) {
+      this._summary.textContent = "";
+      this._chips.replaceChildren();
+      this._grid.replaceChildren();
+      this._more.toggleAttribute("hidden", true);
+      this._empty.textContent = t.off;
+      this._empty.toggleAttribute("hidden", false);
+      return;
+    }
+    const stores = data.stores || [];
+    if (this._store && !stores.some((s) => s.id === this._store)) this._store = null;
+    const until = stores.map((s) => s.valid_until).filter(Boolean).sort()[0];
+    this._summary.textContent = t.summary(data.offers.length, stores.length, until ? formatOfferDate(until, this._o.lang) : "");
+    this._renderChips(stores);
+    const minDiscount = data.min_discount ?? 10;
+    const shown = data.offers
+      .filter((o) => {
+        if (this._store && o.store_id !== this._store) return false;
+        if (this._onlyDiscount && !(o.discount_percent >= minDiscount)) return false;
+        if (this._onlyYours && !(o.products || []).length) return false;
+        if (!this._search) return true;
+        return `${o.heading} ${o.description} ${(o.products || []).join(" ")}`.toLowerCase().includes(this._search);
+      })
+      .sort(
+        (a, b) =>
+          (b.products?.length ? 1 : 0) - (a.products?.length ? 1 : 0) ||
+          (b.discount_percent || 0) - (a.discount_percent || 0) ||
+          a.unit_price - b.unit_price
+      );
+    this._grid.replaceChildren(...shown.slice(0, this._limit).map((o) => this._offer(o, minDiscount)));
+    const left = shown.length - this._limit;
+    this._more.textContent = t.showMore(left);
+    this._more.toggleAttribute("hidden", left <= 0);
+    this._empty.textContent = shown.length ? "" : t.none;
+    this._empty.toggleAttribute("hidden", Boolean(shown.length));
+  }
+
+  _offer(o, minDiscount) {
+    const t = this._t;
+    const offer = { ...o, deal: o.discount_percent >= minDiscount };
+    const src = safeUrl(o.image);
+    const image = src
+      ? el("img", { attrs: { src, alt: "", loading: "lazy", referrerpolicy: "no-referrer" } })
+      : el("div", { cls: "placeholder", text: "🏷" });
+    if (src) image.addEventListener("error", () => image.replaceWith(el("div", { cls: "placeholder", text: "🏷" })), { once: true });
+    const price = el("div", { cls: "price" }, offerTag(offer, this._o));
+    if (o.discount_source === "stated" && o.ordinary_price) {
+      price.append(el("span", { cls: "ord", text: `${this._o.ordinary.toLowerCase()} ${formatKr(o.ordinary_price)}` }));
+    } else if (o.discount_source === "lowest_30d" && o.ordinary_price) {
+      price.append(el("span", { cls: "ord", text: `${this._o.lowest.toLowerCase()} ${formatKr(o.ordinary_price)}` }));
+    }
+    const extras = [o.quantity, o.comparison, o.max_per_household ? this._o.max(o.max_per_household) : null].filter(Boolean);
+    const where = `${o.store} · ${this._o.until.toLowerCase()} ${formatOfferDate(o.valid_until, this._o.lang)}`;
+    const add = el("button", { cls: "add", text: "+", attrs: { title: t.addToList, "aria-label": t.addToList } });
+    add.addEventListener("click", async () => {
+      add.disabled = true;
+      const name = (o.products || [])[0] || o.heading.charAt(0) + o.heading.slice(1).toLowerCase();
+      const item = name.charAt(0).toUpperCase() + name.slice(1);
+      try {
+        await this._hass.callWS({
+          type: "call_service",
+          domain: "todo",
+          service: "add_item",
+          service_data: { item },
+          target: { entity_id: findListEntity(this._hass, "shopping_list", "todo.food_planning_shopping_list") },
+        });
+        this._setStatus(t.added(item));
+      } catch (err) {
+        this._setStatus(errorMessage(err), true);
+        add.disabled = false;
+      }
+    });
+    const body = el(
+      "div",
+      { cls: "body" },
+      el("div", { cls: "row" }, el("span", { cls: "head", text: o.heading }), add),
+      o.description ? el("div", { cls: "desc", text: o.description }) : null,
+      price,
+      extras.length ? el("div", { cls: "where", text: extras.join(" · ") }) : null,
+      el("div", { cls: "where", text: where }),
+      (o.products || []).length ? el("div", { cls: "mine", text: `${t.yours}: ${o.products.join(", ")}` }) : null
+    );
+    return el("div", { cls: `offer${(o.products || []).length ? " yours" : ""}` }, image, body);
+  }
+}
+
+if (!customElements.get("food-planning-offers-card")) {
+  customElements.define("food-planning-offers-card", FoodPlanningOffersCard);
+  window.customCards = window.customCards || [];
+  window.customCards.push({
+    type: "food-planning-offers-card",
+    name: "Food Planning offers",
+    description: "All current offers at the selected stores.",
+  });
+}
+
+/* ------------------------------------------------------------------ */
 /* "What can we cook?" box for the At home view                        */
 /* ------------------------------------------------------------------ */
 
@@ -3135,6 +3453,7 @@ const DASHBOARD_STRINGS = {
     shopping: "Inköpslista",
     pantry: "Hemma",
     recipes: "Recept",
+    offers: "Erbjudanden",
     moveHome: "Flytta inhandlat till Hemma",
     moveHomeConfirm: "Flytta allt som är avbockat till Hemma?",
   },
@@ -3142,6 +3461,7 @@ const DASHBOARD_STRINGS = {
     shopping: "Shopping list",
     pantry: "At home",
     recipes: "Recipes",
+    offers: "Offers",
     moveHome: "Move bought items home",
     moveHomeConfirm: "Move everything ticked off to At home?",
   },
@@ -3158,7 +3478,7 @@ function findListEntity(hass, key, fallback) {
 // HA finds a custom dashboard strategy by the element name
 // ll-strategy-dashboard-<type> and calls its static generate(config, hass).
 class FoodPlanningDashboardStrategy extends HTMLElement {
-  static async generate(config, _hass) {
+  static async generate(config, hass) {
     const t = DASHBOARD_STRINGS[config?.language] || DASHBOARD_STRINGS.sv;
     const lang = config?.language ? { language: config.language } : {};
     // Subviews: the header shows a back arrow to wherever the dashboard was
@@ -3186,6 +3506,7 @@ class FoodPlanningDashboardStrategy extends HTMLElement {
           { type: "custom:food-planning-cook-card", ...lang },
         ]),
         view(t.recipes, "recept", { type: "custom:food-planning-card", title: t.recipes, ...lang }),
+        ...(offersEnabled(hass) ? [view(t.offers, "erbjudanden", { type: "custom:food-planning-offers-card", ...lang })] : []),
       ],
     };
   }

@@ -10,10 +10,9 @@ import math
 from typing import TYPE_CHECKING, Any
 
 from homeassistant.core import CALLBACK_TYPE, HomeAssistant, callback
-from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.dispatcher import async_dispatcher_send
-from homeassistant.helpers.event import async_call_later, async_track_time_change
+from homeassistant.helpers.event import async_track_time_change
 from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from homeassistant.util import dt as dt_util
@@ -29,9 +28,10 @@ from ..const import (
     SIGNAL_RECIPES_UPDATED,
 )
 from ..offer_lookup import OfferHit
+from ..store import ALWAYS_AVAILABLE
 from .api import OffersApiError, TjekClient
+from .matching import match_products
 from .models import Offer, parse_offer
-from .naming import async_name_offers, heading_key
 
 if TYPE_CHECKING:
     from ..data import FoodPlanningConfigEntry
@@ -43,11 +43,6 @@ STORAGE_VERSION = 1
 UPDATE_INTERVAL = timedelta(hours=6)
 # ICA flyers go live at midnight, Willys' around 02:00; fetch after that.
 MONDAY_FETCH = (2, 30)
-# After a failed naming batch, try again after this long, doubling.
-NAMING_RETRY = 600
-MAX_NAMING_RETRY = 6 * 3600
-# Offers named per AI call; small enough for a short model answer.
-NAMING_BATCH = 40
 STORE_LOOKUP_TIMEOUT = 10
 
 
@@ -135,21 +130,15 @@ class OffersCoordinator(DataUpdateCoordinator[OffersData]):
             options.get(CONF_OFFERS_MIN_DISCOUNT, DEFAULT_OFFERS_MIN_DISCOUNT)
         )
         self._radius = float(options.get(CONF_OFFERS_RADIUS, DEFAULT_OFFERS_RADIUS))
-        # heading_key -> product names; [] for non-food.
-        self.names: dict[str, list[str]] = {}
+        # Offer id -> the household's product names it matches.
+        self._matches: dict[str, list[str]] = {}
         self._index: dict[str, list[tuple[Offer, StoreInfo]]] = {}
+        self._products: frozenset[str] = frozenset()
         self._unsubs: list[CALLBACK_TYPE] = []
-        self._naming_retry: CALLBACK_TYPE | None = None
-        self._naming_delay = NAMING_RETRY
 
     async def async_load(self) -> None:
         """Start from the saved offers, so a restart needs no fetch."""
         saved = await self._storage.async_load() or {}
-        self.names = {
-            k: [n for n in v if isinstance(n, str)]
-            for k, v in (saved.get("names") or {}).items()
-            if isinstance(v, list)
-        }
         stores = {
             sid: StoreInfo(
                 **{k: v for k, v in info.items() if k in StoreInfo.__dataclass_fields__}
@@ -209,7 +198,15 @@ class OffersCoordinator(DataUpdateCoordinator[OffersData]):
 
     @callback
     def async_start(self) -> None:
-        """Fetch now (in the background) and every Monday morning."""
+        """Fetch now (in the background) and every Monday morning.
+
+        Matches again when new product names appear (a new recipe).
+        """
+        self._unsubs.append(
+            self.config_entry.runtime_data.store.async_add_listener(
+                self._on_store_changed
+            )
+        )
 
         @callback
         def _monday(now: datetime) -> None:
@@ -234,9 +231,11 @@ class OffersCoordinator(DataUpdateCoordinator[OffersData]):
         """Stop the schedule (on unload)."""
         while self._unsubs:
             self._unsubs.pop()()
-        if self._naming_retry:
-            self._naming_retry()
-            self._naming_retry = None
+
+    @callback
+    def _on_store_changed(self) -> None:
+        if self._product_names() != self._products:
+            self._publish()
 
     async def _async_update_data(self) -> OffersData:
         """Fetch every selected store's current flyer.
@@ -298,59 +297,10 @@ class OffersCoordinator(DataUpdateCoordinator[OffersData]):
         if failures == len(self.store_ids):
             raise UpdateFailed("The flyer API could not be reached")
         data = OffersData(stores=stores, offers=offers, fetched_at=now.isoformat())
-        # Drop names of offers that are gone; name the new ones.
-        keys = {heading_key(o.heading, o.description) for o in offers}
-        self.names = {k: v for k, v in self.names.items() if k in keys}
         await self._async_save(data)
-        self._schedule_naming(0)
+        # After the coordinator has stored the new data.
+        self.hass.loop.call_soon(self._publish)
         return data
-
-    @callback
-    def _schedule_naming(self, delay: float) -> None:
-        if self._naming_retry:
-            self._naming_retry()
-        self._naming_retry = async_call_later(self.hass, delay, self._start_naming)
-
-    @callback
-    def _start_naming(self, _now: datetime) -> None:
-        self._naming_retry = None
-        self.config_entry.async_create_background_task(
-            self.hass, self._async_name(), "food_planning offer names"
-        )
-
-    async def _async_name(self) -> None:
-        """Ask the AI for the product names of offers not named yet."""
-        data = self.data
-        if data is None:
-            return
-        todo: dict[str, tuple[str, str, str]] = {}
-        for offer in data.offers:
-            key = heading_key(offer.heading, offer.description)
-            if key not in self.names:
-                todo.setdefault(key, (key, offer.heading, offer.description))
-        items = list(todo.values())
-        # Batch by batch, so a failure keeps what was named and the
-        # dashboards get matches as soon as the first batch is done.
-        for start in range(0, len(items), NAMING_BATCH):
-            batch = items[start : start + NAMING_BATCH]
-            try:
-                named = await async_name_offers(self.hass, self.config_entry, batch)
-            except HomeAssistantError as err:
-                _LOGGER.warning(
-                    "Could not name offers, retrying in %d s: %s",
-                    self._naming_delay,
-                    err,
-                )
-                self._schedule_naming(self._naming_delay)
-                self._naming_delay = min(self._naming_delay * 2, MAX_NAMING_RETRY)
-                break
-            # An offer the AI skipped matches nothing, and isn't asked again.
-            self.names.update({key: named.get(key, []) for key, _h, _d in batch})
-            await self._async_save(data)
-            self._publish()
-        else:
-            self._naming_delay = NAMING_RETRY
-        self._publish()
 
     @callback
     def _publish(self) -> None:
@@ -364,7 +314,6 @@ class OffersCoordinator(DataUpdateCoordinator[OffersData]):
             {
                 "stores": {sid: asdict(info) for sid, info in data.stores.items()},
                 "offers": [o.as_dict() for o in data.offers],
-                "names": self.names,
                 "fetched_at": data.fetched_at,
             }
         )
@@ -373,18 +322,27 @@ class OffersCoordinator(DataUpdateCoordinator[OffersData]):
         """Delete the saved offers (when offers are turned off)."""
         await self._storage.async_remove()
 
+    def _product_names(self) -> frozenset[str]:
+        store = self.config_entry.runtime_data.store
+        return frozenset(n for n in store.names.values() if n and n != ALWAYS_AVAILABLE)
+
     def _rebuild_index(self) -> None:
+        """Match every offer against the household's product names."""
+        self._products = self._product_names()
+        products = set(self._products)
         index: dict[str, list[tuple[Offer, StoreInfo]]] = {}
+        matches: dict[str, list[str]] = {}
         data = self.data
         if data is not None:
             for offer in data.offers:
                 info = data.stores.get(offer.store_id)
                 if info is None:
                     continue
-                for name in self.names.get(
-                    heading_key(offer.heading, offer.description), []
-                ):
+                found = match_products(offer.heading, products)
+                matches[offer.id] = found
+                for name in found:
                     index.setdefault(name, []).append((offer, info))
+        self._matches = matches
         for hits in index.values():
             hits.sort(key=lambda h: (-(h[0].discount_percent or 0), h[0].unit_price))
         self._index = index
@@ -403,5 +361,5 @@ class OffersCoordinator(DataUpdateCoordinator[OffersData]):
         return result
 
     def product_names(self, offer: Offer) -> list[str]:
-        """The product names an offer matches."""
-        return self.names.get(heading_key(offer.heading, offer.description), [])
+        """The household's product names an offer matches."""
+        return self._matches.get(offer.id, [])

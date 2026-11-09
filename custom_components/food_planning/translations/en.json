@@ -35,9 +35,7 @@
           "sort_shopping": "Sort the shopping list by store section",
           "update_pantry": "Update At home when cooked",
           "categories": "Recipe categories",
-          "admin_only": "Only administrators change recipes",
-          "weekly_dinners": "Suggest dinners every week",
-          "offers": "Show offers from stores"
+          "admin_only": "Only administrators change recipes"
         },
         "data_description": {
           "ai_task_entity": "Leave empty to use the preferred AI task entity from Settings > System > General.",
@@ -46,43 +44,42 @@
           "sort_shopping": "Items are ordered the way a typical grocery store is walked, fruit and vegetables first and frozen food last. The section is worked out along with the product name, so it needs no extra AI calls. Turn off to order the list yourself.",
           "update_pantry": "When a recipe is marked as cooked, the AI subtracts what it used from the At home list.",
           "categories": "One per line. The AI picks from these when importing. Removing one takes it off its recipes.",
-          "admin_only": "When on, only administrator users can edit or delete recipes. Everyone can still import, shop and cook.",
-          "weekly_dinners": "A few dinner ideas from your own recipes each week, in the recipe view. Set up in the next step.",
-          "offers": "Marks ingredients and shopping items that are on offer at stores you pick. Uses an unofficial flyer API that may stop working."
-        }
-      },
-      "weekly": {
-        "title": "Weekly dinners",
-        "description": "A loose pool of dinner ideas from your saved recipes. Nothing is scheduled to a day; pinned and added dinners are never replaced.",
-        "data": {
-          "weekly_day": "Day",
-          "weekly_time": "Time",
-          "weekly_count": "Number of dinners",
-          "weekly_new_ideas": "Allow one new recipe idea"
+          "admin_only": "When on, only administrator users can edit or delete recipes. Everyone can still import, shop and cook."
         },
-        "data_description": {
-          "weekly_day": "When the new week's suggestions are made. Monday morning is when most stores' new flyers are out.",
-          "weekly_count": "How many dinners to suggest.",
-          "weekly_new_ideas": "The AI may suggest one dish that isn't among your recipes."
-        }
-      },
-      "offers": {
-        "title": "Offers",
-        "description": "Offers come from the stores' weekly flyers, around your home location.",
-        "data": {
-          "offers_radius": "Radius",
-          "offers_min_discount": "Smallest discount to highlight"
-        },
-        "data_description": {
-          "offers_radius": "How far from home to look for stores.",
-          "offers_min_discount": "Offers with a stated discount of at least this much are highlighted and favoured in the weekly dinners."
-        }
-      },
-      "stores": {
-        "title": "Stores",
-        "description": "{count} grocery stores were found. ICA, Willys, Hemköp and Coop have a flyer per store.",
-        "data": {
-          "offers_stores": "Stores"
+        "sections": {
+          "weekly": {
+            "name": "Weekly dinners",
+            "description": "A loose pool of dinner ideas from your saved recipes. Nothing is scheduled to a day; pinned and added dinners are never replaced.",
+            "data": {
+              "weekly_dinners": "Suggest dinners every week",
+              "weekly_day": "Day",
+              "weekly_time": "Time",
+              "weekly_count": "Number of dinners",
+              "weekly_new_ideas": "Allow one new recipe idea"
+            },
+            "data_description": {
+              "weekly_dinners": "A few dinner ideas from your own recipes each week, in the recipe view.",
+              "weekly_day": "When the new week's suggestions are made. Monday morning is when most stores' new flyers are out.",
+              "weekly_count": "How many dinners to suggest.",
+              "weekly_new_ideas": "The AI may suggest one dish that isn't among your recipes."
+            }
+          },
+          "offers_section": {
+            "name": "Offers",
+            "description": "Offers come from the stores' weekly flyers, around your home location.",
+            "data": {
+              "offers": "Show offers from stores",
+              "offers_radius": "Radius",
+              "offers_min_discount": "Smallest discount to highlight",
+              "offers_stores": "Stores"
+            },
+            "data_description": {
+              "offers": "Marks ingredients and shopping items that are on offer at stores you pick. Uses an unofficial flyer API that may stop working.",
+              "offers_radius": "How far from home to look for stores.",
+              "offers_min_discount": "Offers with a stated discount of at least this much are highlighted and favoured in the weekly dinners.",
+              "offers_stores": "Grocery stores within the radius, nearest first. ICA, Willys, Hemköp and Coop have a flyer per store. If you change the radius, the list is shown again when you save."
+            }
+          }
         }
       }
     },

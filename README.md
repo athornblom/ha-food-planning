@@ -244,12 +244,19 @@ all. Nothing needs updating afterwards.
 > time. When it does, only the offer sensors go unavailable and the tags
 > disappear; everything else keeps working.
 
-Turn on **Show offers from stores** under **Configure** and pick stores
-near home (ICA, Willys, Hemköp and Coop have a flyer per store). The
-flyers are fetched on Monday at 02:30 and every 6 hours, and each new
-offer gets a product name (one AI batch per week), so it matches your
-ingredients without further AI calls.
+Turn on **Show offers from stores** in the **Erbjudanden** section under
+**Configure** and pick stores near home (ICA, Willys, Hemköp and Coop
+have a flyer per store). The flyers are fetched on Monday at 02:30 and
+every 6 hours.
 
+Offers are matched to your own product names in code, with no AI calls:
+"EKOLOGISK VISPGRÄDDE" matches grädde (Swedish compounds end in the main
+word), "SMÖRGÅSMAT" doesn't match smör, and a new recipe's ingredients
+match right away.
+
+- The **Erbjudanden** tab lists every current offer at your stores:
+  search, filter by store, "bara rabatt" and "era varor" (offers that
+  match what you cook), with + to put one on the shopping list.
 - A yellow price tag shows on ingredients and shopping items that are on
   offer at your stores: the price first, the discount next to it when the
   flyer states it (`🏷 34:90 −13 %`, `🏷 2 för 30 −25 %`). Tap it for the
@@ -280,7 +287,7 @@ the AI or the internet.
 | `sensor.food_planning_offer_matches` | Your products on offer (offers on) |
 | `sensor.food_planning_shopping_savings` | Kronor saved on the list, stated discounts only |
 | `sensor.food_planning_best_deal` | Your product with the biggest discount |
-| `sensor.food_planning_offers_<store>` | Offers at a store now; flyer dates as attributes |
+| `sensor.food_planning_offers_<store>` | Offers at a store now; flyer dates and the 20 biggest discounts as attributes |
 | `sensor.food_planning_flyer_valid_until_<store>` | When the store's flyer ends |
 | `binary_sensor.food_planning_offers_source` | Off when the flyer API fails |
 
@@ -326,10 +333,11 @@ the AI or the internet.
 - **Only administrators change recipes:** off by default. When on, only
   administrator users can edit or delete recipes; everyone can still
   import, shop and cook.
-- **Suggest dinners every week:** on by default; day, time (Monday 07:00),
-  number (5) and whether the AI may add one new idea in the next step.
-- **Show offers from stores:** off by default; radius from home (3 km),
-  smallest discount to highlight (10 %) and stores in the next steps.
+- **Veckans middagar** (section): on by default; day, time (Monday
+  07:00), number (5) and whether the AI may add one new idea.
+- **Erbjudanden** (section): off by default; radius from home (3 km),
+  smallest discount to highlight (10 %) and stores. Changing the radius
+  shows the store list again when you save.
 - **Recipe categories:** one per line. Removing one also takes it off the
   recipes that had it. Easier from the recipe card's **✎ Kategorier**.
 
