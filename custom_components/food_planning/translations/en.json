@@ -35,7 +35,9 @@
           "sort_shopping": "Sort the shopping list by store section",
           "update_pantry": "Update At home when cooked",
           "categories": "Recipe categories",
-          "admin_only": "Only administrators change recipes"
+          "admin_only": "Only administrators change recipes",
+          "weekly_dinners": "Suggest dinners every week",
+          "offers": "Show offers from stores"
         },
         "data_description": {
           "ai_task_entity": "Leave empty to use the preferred AI task entity from Settings > System > General.",
@@ -44,9 +46,48 @@
           "sort_shopping": "Items are ordered the way a typical grocery store is walked, fruit and vegetables first and frozen food last. The section is worked out along with the product name, so it needs no extra AI calls. Turn off to order the list yourself.",
           "update_pantry": "When a recipe is marked as cooked, the AI subtracts what it used from the At home list.",
           "categories": "One per line. The AI picks from these when importing. Removing one takes it off its recipes.",
-          "admin_only": "When on, only administrator users can edit or delete recipes. Everyone can still import, shop and cook."
+          "admin_only": "When on, only administrator users can edit or delete recipes. Everyone can still import, shop and cook.",
+          "weekly_dinners": "A few dinner ideas from your own recipes each week, in the recipe view. Set up in the next step.",
+          "offers": "Marks ingredients and shopping items that are on offer at stores you pick. Uses an unofficial flyer API that may stop working."
+        }
+      },
+      "weekly": {
+        "title": "Weekly dinners",
+        "description": "A loose pool of dinner ideas from your saved recipes. Nothing is scheduled to a day; pinned and added dinners are never replaced.",
+        "data": {
+          "weekly_day": "Day",
+          "weekly_time": "Time",
+          "weekly_count": "Number of dinners",
+          "weekly_new_ideas": "Allow one new recipe idea"
+        },
+        "data_description": {
+          "weekly_day": "When the new week's suggestions are made. Monday morning is when most stores' new flyers are out.",
+          "weekly_count": "How many dinners to suggest.",
+          "weekly_new_ideas": "The AI may suggest one dish that isn't among your recipes."
+        }
+      },
+      "offers": {
+        "title": "Offers",
+        "description": "Offers come from the stores' weekly flyers, around your home location.",
+        "data": {
+          "offers_radius": "Radius",
+          "offers_min_discount": "Smallest discount to highlight"
+        },
+        "data_description": {
+          "offers_radius": "How far from home to look for stores.",
+          "offers_min_discount": "Offers with a stated discount of at least this much are highlighted and favoured in the weekly dinners."
+        }
+      },
+      "stores": {
+        "title": "Stores",
+        "description": "{count} grocery stores were found. ICA, Willys, Hemköp and Coop have a flyer per store.",
+        "data": {
+          "offers_stores": "Stores"
         }
       }
+    },
+    "error": {
+      "cannot_fetch_stores": "Could not fetch stores from the flyer API. Try again later; your selected stores are kept."
     }
   },
   "entity": {
@@ -72,6 +113,17 @@
             }
           }
         }
+      },
+      "weekly_dinners": {
+        "name": "Weekly dinners",
+        "state_attributes": {
+          "event_type": {
+            "state": {
+              "planned": "Planned",
+              "cooked": "Cooked"
+            }
+          }
+        }
       }
     },
     "sensor": {
@@ -88,6 +140,44 @@
             "name": "Timers"
           }
         }
+      },
+      "recipes": {
+        "name": "Recipes"
+      },
+      "ready_recipes": {
+        "name": "Ready to cook"
+      },
+      "last_cooked": {
+        "name": "Last cooked"
+      },
+      "weekly_dinners": {
+        "name": "Weekly dinners"
+      },
+      "dinner_tonight": {
+        "name": "Dinner tonight"
+      },
+      "week_to_buy": {
+        "name": "To buy for the week"
+      },
+      "offer_matches": {
+        "name": "Your products on offer"
+      },
+      "shopping_savings": {
+        "name": "Savings on the shopping list"
+      },
+      "best_deal": {
+        "name": "Best deal for you"
+      },
+      "offers": {
+        "name": "Offers"
+      },
+      "flyer_valid_until": {
+        "name": "Flyer valid until"
+      }
+    },
+    "binary_sensor": {
+      "offers_source": {
+        "name": "Offers source"
       }
     }
   },
@@ -193,6 +283,82 @@
           "description": "How much time to add."
         }
       }
+    },
+    "mark_cooked": {
+      "name": "Mark recipe as cooked",
+      "description": "Remembers that a recipe was cooked, ticks it off the weekly dinners and updates At home.",
+      "fields": {
+        "recipe": {
+          "name": "Recipe",
+          "description": "Recipe title or ID."
+        }
+      }
+    },
+    "plan_week": {
+      "name": "Plan weekly dinners",
+      "description": "Makes the week's dinner suggestions again. Pinned and added dinners are kept.",
+      "fields": {
+        "count": {
+          "name": "Number of dinners",
+          "description": "Defaults to the number in the settings."
+        }
+      }
+    },
+    "get_weekly_dinners": {
+      "name": "Get weekly dinners",
+      "description": "Returns the week's dinners with reasons, missing ingredients and offers."
+    },
+    "add_to_week": {
+      "name": "Add to weekly dinners",
+      "description": "Adds a recipe to the week's dinners. It stays until cooked.",
+      "fields": {
+        "recipe": {
+          "name": "Recipe",
+          "description": "Recipe title or ID."
+        }
+      }
+    },
+    "remove_from_week": {
+      "name": "Remove from weekly dinners",
+      "description": "Removes a dinner; it isn't suggested again this week.",
+      "fields": {
+        "recipe": {
+          "name": "Recipe",
+          "description": "Recipe title or ID, or an idea's title."
+        }
+      }
+    },
+    "add_week_to_shopping_list": {
+      "name": "Shop for the week",
+      "description": "Adds what's missing for the week's dinners not cooked yet to the shopping list."
+    },
+    "get_offers": {
+      "name": "Get offers",
+      "description": "Returns a selected store's current offers, biggest discount first.",
+      "fields": {
+        "store": {
+          "name": "Store",
+          "description": "Store ID or (part of) its name."
+        }
+      }
+    },
+    "search_offers": {
+      "name": "Search offers",
+      "description": "Searches the selected stores' current offers.",
+      "fields": {
+        "query": {
+          "name": "Search",
+          "description": "Product, e.g. kyckling."
+        },
+        "stores": {
+          "name": "Stores",
+          "description": "Only these stores (ID or name). Leave empty for all."
+        },
+        "min_discount": {
+          "name": "Smallest discount",
+          "description": "Only offers with at least this stated discount."
+        }
+      }
     }
   },
   "exceptions": {
@@ -228,6 +394,28 @@
     },
     "timer_not_found": {
       "message": "No cooking timer matches \"{timer}\"."
+    },
+    "weekly_off": {
+      "message": "Weekly dinners are turned off in the settings."
+    },
+    "offers_off": {
+      "message": "Offers are turned off, or no stores are selected."
+    },
+    "store_not_found": {
+      "message": "No selected store matches \"{store}\"."
+    }
+  },
+  "selector": {
+    "weekday": {
+      "options": {
+        "mon": "Monday",
+        "tue": "Tuesday",
+        "wed": "Wednesday",
+        "thu": "Thursday",
+        "fri": "Friday",
+        "sat": "Saturday",
+        "sun": "Sunday"
+      }
     }
   }
 }

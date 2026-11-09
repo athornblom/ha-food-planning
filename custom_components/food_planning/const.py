@@ -23,10 +23,32 @@ DEFAULT_SORT_SHOPPING: Final = True
 CONF_ADMIN_ONLY: Final = "admin_only"
 DEFAULT_ADMIN_ONLY: Final = False
 
+CONF_WEEKLY: Final = "weekly_dinners"
+DEFAULT_WEEKLY: Final = True
+CONF_WEEKLY_DAY: Final = "weekly_day"
+DEFAULT_WEEKLY_DAY: Final = "mon"
+CONF_WEEKLY_TIME: Final = "weekly_time"
+DEFAULT_WEEKLY_TIME: Final = "07:00:00"
+CONF_WEEKLY_COUNT: Final = "weekly_count"
+DEFAULT_WEEKLY_COUNT: Final = 5
+CONF_WEEKLY_IDEAS: Final = "weekly_new_ideas"
+DEFAULT_WEEKLY_IDEAS: Final = False
+WEEKDAYS: Final = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
+
+CONF_OFFERS: Final = "offers"
+DEFAULT_OFFERS: Final = False
+CONF_OFFERS_RADIUS: Final = "offers_radius"
+DEFAULT_OFFERS_RADIUS: Final = 3.0
+CONF_OFFERS_STORES: Final = "offers_stores"
+CONF_OFFERS_MIN_DISCOUNT: Final = "offers_min_discount"
+DEFAULT_OFFERS_MIN_DISCOUNT: Final = 10
+
 # Sent after the recipes/lists or the timers change, by whichever config
 # entry is loaded, so open dashboards keep updating across reloads.
 SIGNAL_RECIPES_UPDATED: Final = f"{DOMAIN}_recipes_updated"
 SIGNAL_TIMERS_UPDATED: Final = f"{DOMAIN}_timers_updated"
+# Sent when the offers were fetched or their product names changed.
+SIGNAL_OFFERS_UPDATED: Final = f"{DOMAIN}_offers_updated"
 
 SERVICE_IMPORT_RECIPE: Final = "import_recipe"
 SERVICE_ADD_TO_SHOPPING_LIST: Final = "add_recipe_to_shopping_list"
@@ -36,6 +58,14 @@ SERVICE_PAUSE_TIMER: Final = "pause_timer"
 SERVICE_RESUME_TIMER: Final = "resume_timer"
 SERVICE_CANCEL_TIMER: Final = "cancel_timer"
 SERVICE_EXTEND_TIMER: Final = "extend_timer"
+SERVICE_MARK_COOKED: Final = "mark_cooked"
+SERVICE_PLAN_WEEK: Final = "plan_week"
+SERVICE_GET_WEEKLY_DINNERS: Final = "get_weekly_dinners"
+SERVICE_ADD_TO_WEEK: Final = "add_to_week"
+SERVICE_REMOVE_FROM_WEEK: Final = "remove_from_week"
+SERVICE_ADD_WEEK_TO_SHOPPING_LIST: Final = "add_week_to_shopping_list"
+SERVICE_GET_OFFERS: Final = "get_offers"
+SERVICE_SEARCH_OFFERS: Final = "search_offers"
 
 ATTR_URL: Final = "url"
 ATTR_TEXT: Final = "text"

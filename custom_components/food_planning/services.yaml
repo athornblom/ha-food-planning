@@ -80,3 +80,68 @@ extend_timer:
       example: "00:05:00"
       selector:
         duration:
+
+mark_cooked:
+  fields:
+    recipe:
+      required: true
+      example: "Pasta carbonara"
+      selector:
+        text:
+
+plan_week:
+  fields:
+    count:
+      example: 5
+      selector:
+        number:
+          min: 1
+          max: 14
+
+get_weekly_dinners:
+
+add_to_week:
+  fields:
+    recipe:
+      required: true
+      example: "Fredagstacos"
+      selector:
+        text:
+
+remove_from_week:
+  fields:
+    recipe:
+      required: true
+      example: "Fredagstacos"
+      selector:
+        text:
+
+add_week_to_shopping_list:
+
+get_offers:
+  fields:
+    store:
+      required: true
+      example: "ICA Nära Haga"
+      selector:
+        text:
+
+search_offers:
+  fields:
+    query:
+      required: true
+      example: "kyckling"
+      selector:
+        text:
+    stores:
+      example: "Willys"
+      selector:
+        text:
+          multiple: true
+    min_discount:
+      example: 20
+      selector:
+        number:
+          min: 0
+          max: 100
+          unit_of_measurement: "%"

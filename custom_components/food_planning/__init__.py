@@ -27,13 +27,19 @@ from .const import (
 from .data import FoodPlanningConfigEntry, FoodPlanningData
 from .images import async_delete_all_images, async_repair_images, ensure_images_dir
 from .merge import ListMerger
+from .offers import (
+    async_remove_offers_storage,
+    async_setup_offer_services,
+    async_setup_offers,
+)
 from .pantry_match import PantryMatcher
 from .services import async_setup_services
 from .store import LISTS, FoodPlanningStore
 from .timers import TimerManager
 from .websocket import async_setup_websocket
+from .weekly import WeeklyPlanner
 
-PLATFORMS = [Platform.EVENT, Platform.SENSOR, Platform.TODO]
+PLATFORMS = [Platform.BINARY_SENSOR, Platform.EVENT, Platform.SENSOR, Platform.TODO]
 
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
@@ -41,6 +47,7 @@ CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     """Register actions, the websocket API, the recipe card and image folder."""
     async_setup_services(hass)
+    async_setup_offer_services(hass)
     async_setup_websocket(hass)
 
     images = await hass.async_add_executor_job(ensure_images_dir, hass)
@@ -77,15 +84,22 @@ async def async_setup_entry(
     timers = TimerManager(hass)
     await timers.async_load()
     entry.async_on_unload(timers.async_stop)
+    planner = WeeklyPlanner(hass, entry)
+    entry.async_on_unload(planner.async_stop)
     entry.runtime_data = FoodPlanningData(
-        store=store, mergers=mergers, matcher=matcher, timers=timers
+        store=store, mergers=mergers, matcher=matcher, timers=timers, planner=planner
     )
+    # Optional; never fails setup.
+    await async_setup_offers(hass, entry)
+    # The schedule, stores and offers come from the options.
+    entry.async_on_unload(entry.add_update_listener(_async_options_updated))
     # Re-check missing ingredients whenever the pantry or recipes change.
     entry.async_on_unload(store.async_add_listener(matcher.async_schedule))
     matcher.async_schedule()
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     # After the entities, so timers that ended during a restart fire events.
     timers.async_start()
+    planner.async_start()
     # Tell open dashboards (subscribed through the websocket API) about
     # changes, and refresh them now in case this is a reload.
     entry.async_on_unload(
@@ -104,6 +118,12 @@ async def async_setup_entry(
         hass, async_repair_images(hass, store), "food_planning image repair"
     )
     return True
+
+
+async def _async_options_updated(
+    hass: HomeAssistant, entry: FoodPlanningConfigEntry
+) -> None:
+    await hass.config_entries.async_reload(entry.entry_id)
 
 
 def _remove_old_entities(hass: HomeAssistant, entry: FoodPlanningConfigEntry) -> None:
@@ -129,4 +149,5 @@ async def async_remove_entry(
     """Delete recipes, the shopping list, timers and saved images."""
     await FoodPlanningStore(hass).async_remove()
     await TimerManager(hass).async_remove()
+    await async_remove_offers_storage(hass)
     await async_delete_all_images(hass)

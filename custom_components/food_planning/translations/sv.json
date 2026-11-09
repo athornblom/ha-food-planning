@@ -35,7 +35,9 @@
           "sort_shopping": "Sortera inköpslistan efter butikens avdelningar",
           "update_pantry": "Uppdatera Hemma när något lagas",
           "categories": "Receptkategorier",
-          "admin_only": "Bara administratörer ändrar recept"
+          "admin_only": "Bara administratörer ändrar recept",
+          "weekly_dinners": "Föreslå middagar varje vecka",
+          "offers": "Visa erbjudanden från butiker"
         },
         "data_description": {
           "ai_task_entity": "Lämna tomt för att använda den föredragna AI-uppgiftsentiteten under Inställningar > System > Allmänt.",
@@ -44,9 +46,48 @@
           "sort_shopping": "Varorna ordnas som man går i en vanlig matbutik: frukt och grönt först, frys sist. Avdelningen tas fram tillsammans med produktnamnet, så det kräver inga extra AI-anrop. Stäng av för att ordna listan själv.",
           "update_pantry": "När ett recept markeras som lagat drar AI:n av det som gick åt från listan Hemma.",
           "categories": "En per rad. AI:n väljer bland dessa vid import. Tar du bort en försvinner den från recepten.",
-          "admin_only": "När det är på kan bara administratörer redigera eller ta bort recept. Alla kan fortfarande importera, handla och laga."
+          "admin_only": "När det är på kan bara administratörer redigera eller ta bort recept. Alla kan fortfarande importera, handla och laga.",
+          "weekly_dinners": "Några middagsförslag från era egna recept varje vecka, i receptvyn. Ställs in i nästa steg.",
+          "offers": "Markerar ingredienser och varor som är på extrapris i butiker du väljer. Använder ett inofficiellt reklamblads-API som kan sluta fungera."
+        }
+      },
+      "weekly": {
+        "title": "Veckans middagar",
+        "description": "Ett löst urval middagar från era sparade recept. Inget läggs på en viss dag, och fästa eller tillagda middagar byts aldrig ut.",
+        "data": {
+          "weekly_day": "Dag",
+          "weekly_time": "Tid",
+          "weekly_count": "Antal middagar",
+          "weekly_new_ideas": "Tillåt en ny receptidé"
+        },
+        "data_description": {
+          "weekly_day": "När veckans förslag tas fram. Måndag morgon har de flesta butikers nya reklamblad kommit.",
+          "weekly_count": "Hur många middagar som föreslås.",
+          "weekly_new_ideas": "AI:n får föreslå en rätt som inte finns bland era recept."
+        }
+      },
+      "offers": {
+        "title": "Erbjudanden",
+        "description": "Erbjudandena kommer från butikernas veckoreklamblad, runt din hemadress.",
+        "data": {
+          "offers_radius": "Radie",
+          "offers_min_discount": "Minsta rabatt att markera"
+        },
+        "data_description": {
+          "offers_radius": "Hur långt från hemmet butiker letas efter.",
+          "offers_min_discount": "Erbjudanden med minst så här stor angiven rabatt markeras och prioriteras i veckans middagar."
+        }
+      },
+      "stores": {
+        "title": "Butiker",
+        "description": "{count} matbutiker hittades. ICA, Willys, Hemköp och Coop har ett reklamblad per butik.",
+        "data": {
+          "offers_stores": "Butiker"
         }
       }
+    },
+    "error": {
+      "cannot_fetch_stores": "Kunde inte hämta butiker från reklamblads-API:t. Försök igen senare; dina valda butiker behålls."
     }
   },
   "entity": {
@@ -72,6 +113,17 @@
             }
           }
         }
+      },
+      "weekly_dinners": {
+        "name": "Veckans middagar",
+        "state_attributes": {
+          "event_type": {
+            "state": {
+              "planned": "Planerad",
+              "cooked": "Lagad"
+            }
+          }
+        }
       }
     },
     "sensor": {
@@ -88,6 +140,44 @@
             "name": "Timers"
           }
         }
+      },
+      "recipes": {
+        "name": "Recept"
+      },
+      "ready_recipes": {
+        "name": "Kan lagas nu"
+      },
+      "last_cooked": {
+        "name": "Senast lagad"
+      },
+      "weekly_dinners": {
+        "name": "Veckans middagar"
+      },
+      "dinner_tonight": {
+        "name": "Förslag ikväll"
+      },
+      "week_to_buy": {
+        "name": "Att handla till veckan"
+      },
+      "offer_matches": {
+        "name": "Extrapris på era varor"
+      },
+      "shopping_savings": {
+        "name": "Besparing på inköpslistan"
+      },
+      "best_deal": {
+        "name": "Bästa extrapriset för er"
+      },
+      "offers": {
+        "name": "Erbjudanden"
+      },
+      "flyer_valid_until": {
+        "name": "Reklamblad gäller till"
+      }
+    },
+    "binary_sensor": {
+      "offers_source": {
+        "name": "Erbjudanden (källa)"
       }
     }
   },
@@ -193,6 +283,82 @@
           "description": "Hur mycket tid som läggs till."
         }
       }
+    },
+    "mark_cooked": {
+      "name": "Markera recept som lagat",
+      "description": "Kommer ihåg att receptet lagades, bockar av det i veckans middagar och uppdaterar Hemma.",
+      "fields": {
+        "recipe": {
+          "name": "Recept",
+          "description": "Receptets namn eller ID."
+        }
+      }
+    },
+    "plan_week": {
+      "name": "Planera veckans middagar",
+      "description": "Tar fram veckans middagsförslag igen. Fästa och tillagda middagar behålls.",
+      "fields": {
+        "count": {
+          "name": "Antal middagar",
+          "description": "Standard är antalet i inställningarna."
+        }
+      }
+    },
+    "get_weekly_dinners": {
+      "name": "Hämta veckans middagar",
+      "description": "Returnerar veckans middagar med motivering, vad som saknas och erbjudanden."
+    },
+    "add_to_week": {
+      "name": "Lägg i veckan",
+      "description": "Lägger till ett recept bland veckans middagar. Det ligger kvar tills det är lagat.",
+      "fields": {
+        "recipe": {
+          "name": "Recept",
+          "description": "Receptets namn eller ID."
+        }
+      }
+    },
+    "remove_from_week": {
+      "name": "Ta bort från veckan",
+      "description": "Tar bort en middag; den föreslås inte igen den här veckan.",
+      "fields": {
+        "recipe": {
+          "name": "Recept",
+          "description": "Receptets namn eller ID, eller en idés namn."
+        }
+      }
+    },
+    "add_week_to_shopping_list": {
+      "name": "Handla till veckan",
+      "description": "Lägger det som saknas för veckans olagade middagar på inköpslistan."
+    },
+    "get_offers": {
+      "name": "Hämta erbjudanden",
+      "description": "Returnerar en vald butiks aktuella erbjudanden, störst rabatt först.",
+      "fields": {
+        "store": {
+          "name": "Butik",
+          "description": "Butikens ID eller (del av) namnet."
+        }
+      }
+    },
+    "search_offers": {
+      "name": "Sök erbjudanden",
+      "description": "Söker bland de valda butikernas aktuella erbjudanden.",
+      "fields": {
+        "query": {
+          "name": "Sök",
+          "description": "Vara, t.ex. kyckling."
+        },
+        "stores": {
+          "name": "Butiker",
+          "description": "Bara dessa butiker (ID eller namn). Tomt för alla."
+        },
+        "min_discount": {
+          "name": "Minsta rabatt",
+          "description": "Bara erbjudanden med minst så här stor angiven rabatt."
+        }
+      }
     }
   },
   "exceptions": {
@@ -228,6 +394,28 @@
     },
     "timer_not_found": {
       "message": "Ingen matlagningstimer matchar \"{timer}\"."
+    },
+    "weekly_off": {
+      "message": "Veckans middagar är avstängt i inställningarna."
+    },
+    "offers_off": {
+      "message": "Erbjudanden är avstängt, eller inga butiker är valda."
+    },
+    "store_not_found": {
+      "message": "Ingen vald butik matchar \"{store}\"."
+    }
+  },
+  "selector": {
+    "weekday": {
+      "options": {
+        "mon": "Måndag",
+        "tue": "Tisdag",
+        "wed": "Onsdag",
+        "thu": "Torsdag",
+        "fri": "Fredag",
+        "sat": "Lördag",
+        "sun": "Söndag"
+      }
     }
   }
 }

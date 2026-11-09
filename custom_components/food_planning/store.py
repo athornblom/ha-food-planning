@@ -249,6 +249,49 @@ class ShoppingItem:
     uid: str = field(default_factory=_new_uid)
 
 
+@dataclass
+class WeekDinner:
+    """A dinner in the week's plan: a saved recipe, or a new idea."""
+
+    recipe_uid: str | None = None
+    # Only for ideas (no saved recipe): what to search for.
+    title: str | None = None
+    reason: str | None = None
+    # Kept when the plan is made again: pinned by the user, or added by
+    # them. rolled_over: left from last week, its ingredients are home.
+    pinned: bool = False
+    added: bool = False
+    rolled_over: bool = False
+    cooked_at: str | None = None
+
+
+@dataclass
+class WeekPlan:
+    """Dinner suggestions for one week. Not a schedule: no days."""
+
+    week: str = ""
+    created: str | None = None
+    dinners: list[WeekDinner] = field(default_factory=list)
+    # Recipes the user removed this week; not suggested again until next.
+    removed: list[str] = field(default_factory=list)
+
+
+def _week_from_dict(data: dict[str, Any] | None) -> WeekPlan:
+    if not isinstance(data, dict):
+        return WeekPlan()
+    plan = _from_dict(WeekPlan, data)
+    plan.dinners = [
+        _from_dict(WeekDinner, d)
+        for d in data.get("dinners", [])
+        if isinstance(d, dict)
+    ]
+    return plan
+
+
+# Cooked recipes remembered, newest last.
+MAX_COOKED = 300
+
+
 def _shopping_item_from_dict(data: dict[str, Any]) -> ShoppingItem:
     item = _from_dict(ShoppingItem, data)
     # Version 0.3 and earlier stored a single recipe_uid.
@@ -277,6 +320,11 @@ class FoodPlanningStore:
         # Item text (see name_key) -> store section (see SECTIONS).
         self.sections: dict[str, str] = {}
         self.lists: dict[str, list[ShoppingItem]] = {SHOPPING: [], PANTRY: []}
+        # "sv" or "en": the defaults and the texts the app writes itself.
+        self.language = "sv"
+        self.week = WeekPlan()
+        # [{"uid": recipe uid, "at": ISO time}], oldest first.
+        self.cooked: list[dict[str, str]] = []
         self._listeners: list[Callable[[], None]] = []
 
     @property
@@ -295,6 +343,7 @@ class FoodPlanningStore:
     ) -> Self:
         """Create a store and load its saved data."""
         store = cls(hass)
+        store.language = default_language
         data = await store._store.async_load() or {}
         store.categories = list(
             data.get("categories")
@@ -320,6 +369,12 @@ class FoodPlanningStore:
             store.lists[list_name] = [
                 _shopping_item_from_dict(i) for i in data.get(list_name, [])
             ]
+        store.week = _week_from_dict(data.get("week"))
+        store.cooked = [
+            c
+            for c in data.get("cooked") or []
+            if isinstance(c, dict) and isinstance(c.get("uid"), str)
+        ][-MAX_COOKED:]
         store._link_items_by_name()
         return store
 
@@ -358,6 +413,8 @@ class FoodPlanningStore:
                 "category_descriptions": self.category_descriptions,
                 "names": self.names,
                 "sections": self.sections,
+                "week": asdict(self.week),
+                "cooked": self.cooked,
                 **{
                     name: [asdict(i) for i in items]
                     for name, items in self.lists.items()
@@ -572,7 +629,23 @@ class FoodPlanningStore:
         recipe = self.get_recipe(uid)
         if recipe is not None:
             self.recipes.remove(recipe)
+            self.week.dinners = [d for d in self.week.dinners if d.recipe_uid != uid]
         return recipe
+
+    def mark_cooked(self, recipe: Recipe) -> None:
+        """Remember that a recipe was cooked; tick it off the week's plan."""
+        now = dt_util.utcnow().isoformat()
+        recipe.on_shopping_list = False
+        self.cooked.append({"uid": recipe.uid, "at": now})
+        del self.cooked[:-MAX_COOKED]
+        for dinner in self.week.dinners:
+            if dinner.recipe_uid == recipe.uid and dinner.cooked_at is None:
+                dinner.cooked_at = now
+                break
+
+    def last_cooked(self, uid: str) -> str | None:
+        """When a recipe was last cooked (ISO time), if ever."""
+        return next((c["at"] for c in reversed(self.cooked) if c["uid"] == uid), None)
 
     # Shopping list and pantry
 

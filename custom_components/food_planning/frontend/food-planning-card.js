@@ -81,6 +81,25 @@ const STRINGS = {
     source: "Källa",
     close: "Stäng",
     notLoaded: "Food Planning är inte laddad.",
+    weekTitle: "Veckans middagar",
+    weekProgress: (done, total, week) => `${done} av ${total} lagade · v${week}`,
+    weekEmpty: "Inga förslag den här veckan än.",
+    weekPlan: "Föreslå middagar",
+    weekPlanning: "Tar fram förslag…",
+    weekNew: "Ny plan",
+    weekShop: (n) => (n ? `🛒 Handla till veckan · ${n} ${n === 1 ? "vara" : "varor"}` : "🛒 Allt till veckan finns"),
+    weekShopped: (n) => (n ? `${n} ${n === 1 ? "vara" : "varor"} lades på inköpslistan.` : "Allt fanns redan på listan."),
+    weekSwap: "Byt",
+    weekRemove: "Ta bort för veckan",
+    weekPin: "Behåll",
+    weekUnpin: "Sluta behålla",
+    weekCooked: "✓ lagad",
+    weekAdded: "tillagd av dig",
+    weekRolled: "från förra veckan",
+    weekIdea: "💡 Ny idé",
+    weekAdd: "＋ Lägg i veckan",
+    weekIn: "✓ I veckans middagar",
+    weekAddedToast: "Lagd i veckans middagar.",
   },
   en: {
     lang: "en",
@@ -152,6 +171,25 @@ const STRINGS = {
     source: "Source",
     close: "Close",
     notLoaded: "Food Planning is not loaded.",
+    weekTitle: "This week's dinners",
+    weekProgress: (done, total, week) => `${done} of ${total} cooked · week ${week}`,
+    weekEmpty: "No suggestions this week yet.",
+    weekPlan: "Suggest dinners",
+    weekPlanning: "Picking dinners…",
+    weekNew: "New plan",
+    weekShop: (n) => (n ? `🛒 Shop for the week · ${n} ${n === 1 ? "item" : "items"}` : "🛒 Everything for the week is there"),
+    weekShopped: (n) => (n ? `${n} ${n === 1 ? "item" : "items"} added to the shopping list.` : "Everything was already on the list."),
+    weekSwap: "Swap",
+    weekRemove: "Remove for this week",
+    weekPin: "Keep",
+    weekUnpin: "Stop keeping",
+    weekCooked: "✓ cooked",
+    weekAdded: "added by you",
+    weekRolled: "from last week",
+    weekIdea: "💡 New idea",
+    weekAdd: "＋ Add to the week",
+    weekIn: "✓ In this week's dinners",
+    weekAddedToast: "Added to this week's dinners.",
   },
 };
 
@@ -270,6 +308,138 @@ function formatMinutes(minutes) {
   return formatDuration(minutes * 60);
 }
 
+/* ------------------------------------------------------------------ */
+/* Offers (only shown when the offers module is on)                    */
+/* ------------------------------------------------------------------ */
+
+const OFFER_STRINGS = {
+  sv: {
+    lang: "sv",
+    filter: "🏷 Extrapris",
+    onOffer: (n) => `🏷 ${n} på extrapris`,
+    ordinary: "Ordinarie",
+    save: (kr, pct) => `spara ${kr} (${pct} %)`,
+    lowest: "Lägsta pris 30 dagar",
+    unknown: "Rabatt ej angiven i reklambladet",
+    compare: "Jfr-pris",
+    until: "Gäller t.o.m.",
+    member: "Medlemspris",
+    max: (n) => `Max ${n} per hushåll`,
+    plus: "Plus",
+    also: "Även",
+    pieces: "för",
+    refill: "Fyll på – extrapris",
+    refillAdd: "Lägg på inköpslistan",
+    refillHide: "Dölj till nästa vecka",
+    added: (name) => `”${name}” lades på inköpslistan.`,
+    listSavings: (kr) => `Extrapris på listan: spara minst ${kr}`,
+  },
+  en: {
+    lang: "en",
+    filter: "🏷 On offer",
+    onOffer: (n) => `🏷 ${n} on offer`,
+    ordinary: "Ordinary price",
+    save: (kr, pct) => `save ${kr} (${pct} %)`,
+    lowest: "Lowest price in 30 days",
+    unknown: "Discount not stated in the flyer",
+    compare: "Comparison price",
+    until: "Valid until",
+    member: "Member price",
+    max: (n) => `Max ${n} per household`,
+    plus: "Member",
+    also: "Also",
+    pieces: "for",
+    refill: "Stock up – on offer",
+    refillAdd: "Add to shopping list",
+    refillHide: "Hide until next week",
+    added: (name) => `“${name}” was added to the shopping list.`,
+    listSavings: (kr) => `Offers on the list: save at least ${kr}`,
+  },
+};
+
+/** 34.9 -> "34:90", 35 -> "35:-" (as on Swedish price signs). */
+function formatKr(value) {
+  const cents = Math.round(value * 100);
+  const whole = Math.floor(cents / 100);
+  const rest = cents % 100;
+  return rest ? `${whole}:${String(rest).padStart(2, "0")}` : `${whole}:-`;
+}
+
+/** "34:90", or "2 för 30" for multi-buy offers. */
+function offerPrice(offer, o) {
+  if (offer.pieces > 1) return `${offer.pieces} ${o.pieces} ${formatKr(offer.price).replace(/:-$/, "")}`;
+  return formatKr(offer.price);
+}
+
+/** "sön 15/11". */
+function formatOfferDate(iso, lang) {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toLocaleDateString(lang === "en" ? "en-GB" : "sv-SE", { weekday: "short", day: "numeric", month: "numeric" });
+}
+
+/** Sorts recipes for the offer filter: real deals first, then any offer. */
+function offerScore(recipe) {
+  const offers = Object.values(recipe.offers || {});
+  return offers.filter((list) => list[0].deal).length * 10 + offers.length;
+}
+
+/** "2026-W46", as the integration names weeks. */
+function isoWeek(date) {
+  const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+  const day = d.getUTCDay() || 7;
+  d.setUTCDate(d.getUTCDate() + 4 - day);
+  const start = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+  const week = Math.ceil(((d - start) / 86400000 + 1) / 7);
+  return `${d.getUTCFullYear()}-W${String(week).padStart(2, "0")}`;
+}
+
+/** Same as the integration's name_key: casefold, single spaces. */
+function nameKey(text) {
+  return text.toLowerCase().split(/\s+/).filter(Boolean).join(" ");
+}
+
+/**
+ * The price-sign tag: price first, the discount next to it when the flyer
+ * states it. Faded when the discount is unknown or small.
+ */
+function offerTag(offer, o, { label = "", chain = false } = {}) {
+  const tag = el("button", { cls: `offer-tag${offer.deal ? "" : " weak"}`, attrs: { type: "button" } });
+  const parts = [`🏷${label ? ` ${label}` : ""} ${offerPrice(offer, o)}`];
+  tag.append(document.createTextNode(parts.join("")));
+  if (offer.discount_percent) tag.append(document.createTextNode(" "), el("b", { text: `−${offer.discount_percent} %` }));
+  if (offer.member) tag.append(document.createTextNode(` ${o.plus}`));
+  if (chain && offer.chain) tag.append(document.createTextNode(` ${offer.chain}`));
+  tag.title = `${offer.store}: ${offer.heading}`;
+  return tag;
+}
+
+/** Store, price, ordinary price and saving, end date: shown on tap. */
+function offerDetails(offers, o) {
+  const [best, ...others] = offers;
+  const row = (k, v) => el("div", { cls: "r" }, el("span", { cls: "k", text: k }), el("span", { text: v }));
+  const box = el(
+    "div",
+    { cls: "offer-pop" },
+    el("div", { cls: "r" }, el("strong", { text: best.store }), el("span", { text: [offerPrice(best, o), best.quantity].filter(Boolean).join(" · ") }))
+  );
+  if (best.discount_source === "stated" && best.ordinary_price) {
+    box.append(row(o.ordinary, `${formatKr(best.ordinary_price)} · ${o.save(formatKr(best.saving || 0), best.discount_percent)}`));
+  } else if (best.discount_source === "lowest_30d" && best.ordinary_price) {
+    box.append(row(o.lowest, `${formatKr(best.ordinary_price)} (−${best.discount_percent} %)`));
+  } else {
+    box.append(el("div", { cls: "k", text: o.unknown }));
+  }
+  if (best.comparison) box.append(row(o.compare, best.comparison));
+  const extras = [best.member ? o.member : null, best.max_per_household ? o.max(best.max_per_household) : null].filter(Boolean);
+  if (extras.length) box.append(el("div", { cls: "k", text: extras.join(" · ") }));
+  box.append(row(o.until, formatOfferDate(best.valid_until, o.lang)));
+  for (const other of others) {
+    box.append(row(`${o.also} ${other.store}`, [offerPrice(other, o), other.discount_percent ? `−${other.discount_percent} %` : null].filter(Boolean).join(" ")));
+  }
+  return box;
+}
+
 const SHARED_CSS = `
   :host { --fp-radius: var(--ha-card-border-radius, 12px); --fp-danger: var(--error-color, #db4437); }
   button {
@@ -311,6 +481,21 @@ const SHARED_CSS = `
   }
   .cat.dot::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--cat); }
   .time { white-space: nowrap; }
+  .offer-tag {
+    font: inherit; cursor: pointer; display: inline-flex; align-items: center; gap: 0;
+    font-size: 12px; font-weight: 600; line-height: 1.4; padding: 1px 7px; border-radius: 4px;
+    background: #ffd21f; color: #2a2100; border: none; white-space: nowrap; flex: none;
+  }
+  .offer-tag b { color: #c62828; font-weight: 700; }
+  .offer-tag.weak { background: color-mix(in srgb, #ffd21f 35%, var(--card-background-color, #fff)); color: var(--primary-text-color); }
+  .offer-tag.weak b { color: inherit; }
+  .offer-pop {
+    margin: 4px 0 6px; padding: 8px 10px; border-radius: 8px; font-size: 12px; line-height: 1.45;
+    background: var(--secondary-background-color); display: grid; gap: 2px;
+  }
+  .offer-pop .r { display: flex; justify-content: space-between; gap: 12px; }
+  .offer-pop .r > :last-child { text-align: right; }
+  .offer-pop .k { color: var(--secondary-text-color); }
 `;
 
 class FoodPlanningCard extends HTMLElement {
@@ -324,11 +509,14 @@ class FoodPlanningCard extends HTMLElement {
     this._categories = [];
     this._unsub = null;
     this._subscribing = false;
+    this._week = null;
+    this._offerFilter = false;
   }
 
   setConfig(config) {
     this._config = config || {};
     this._t = STRINGS[this._config.language] || STRINGS.sv;
+    this._o = OFFER_STRINGS[this._config.language] || OFFER_STRINGS.sv;
     this._build();
     this._renderGrid();
   }
@@ -368,12 +556,16 @@ class FoodPlanningCard extends HTMLElement {
       this._unsub = await this._hass.connection.subscribeMessage(
         (msg) => {
           this._recipes = msg.recipes;
+          this._week = msg.week || null;
+          this._weeklyEnabled = Boolean(msg.weekly_enabled);
+          this._offersEnabled = Boolean(msg.offers_enabled);
           this._categories = msg.categories || [];
           this._categoryDescriptions = msg.category_descriptions || {};
           if (this._category && !this._categories.includes(this._category)) this._category = null;
           this._renderCategoryChips();
+          this._renderWeek();
           this._renderGrid();
-          if (this._dialog) this._dialog.update(this._recipes, this._categories);
+          if (this._dialog) this._dialog.update(this._recipes, this._categories, this._weekInfo());
         },
         { type: `${DOMAIN}/recipes/subscribe` }
       );
@@ -458,6 +650,41 @@ class FoodPlanningCard extends HTMLElement {
       .cat-editor .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
       .cat-editor .hint { font-size: 12px; color: var(--secondary-text-color); margin: 8px 0 0; }
       .empty { margin: 16px 0 0; color: var(--secondary-text-color); }
+      .tile .imgwrap { position: relative; display: block; }
+      .tile .imgwrap .offer-tag {
+        position: absolute; left: 8px; bottom: 8px; box-shadow: 0 1px 4px rgba(0,0,0,.35); pointer-events: none;
+      }
+      .chip.offers.active { background: #ffd21f; color: #2a2100; }
+      .week { margin-top: 16px; border: 1px solid var(--divider-color); border-radius: var(--fp-radius); overflow: hidden; }
+      .week:empty { display: none; }
+      .week header { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; padding: 12px 14px 6px; }
+      .week h2 { margin: 0; font-size: 16px; font-weight: 500; }
+      .week .progress { font-size: 12px; color: var(--secondary-text-color); white-space: nowrap; }
+      .week .dish {
+        display: grid; grid-template-columns: 48px minmax(0, 1fr) auto; gap: 12px; align-items: center;
+        padding: 8px 14px; border-top: 1px solid var(--divider-color);
+      }
+      .week .thumb { width: 48px; height: 48px; border-radius: 8px; object-fit: cover; font-size: 22px; }
+      .week .open { cursor: pointer; display: block; min-width: 0; }
+      .week .open:focus-visible { outline: 2px solid var(--primary-color); border-radius: 4px; }
+      .week .from { font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--primary-color); }
+      .week .title { font-weight: 500; line-height: 1.25; }
+      .week .dmeta { display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: center; margin-top: 3px; font-size: 12px; color: var(--secondary-text-color); }
+      .week .reason { font-size: 12px; color: var(--secondary-text-color); margin-top: 2px; }
+      .week .ok { color: var(--success-color, #43a047); }
+      .week .warn { color: var(--warning-color, #ffa600); }
+      .week .done .title { text-decoration: line-through; color: var(--secondary-text-color); }
+      .week .done .thumb { opacity: 0.45; }
+      .week .acts { display: flex; gap: 2px; }
+      .week .acts button {
+        width: 34px; height: 34px; padding: 0; border-radius: 50%; font-size: 15px;
+        background: transparent; color: var(--secondary-text-color);
+      }
+      .week .acts button:hover { background: var(--secondary-background-color); }
+      .week .acts button.on { color: var(--primary-color); }
+      .week footer { display: flex; flex-wrap: wrap; gap: 8px; padding: 10px 14px 14px; border-top: 1px solid var(--divider-color); }
+      .week footer .grow { flex: 1 1 auto; }
+      .week .wempty { padding: 4px 14px 14px; display: flex; flex-wrap: wrap; gap: 10px; align-items: center; color: var(--secondary-text-color); }
     `,
     });
 
@@ -497,6 +724,13 @@ class FoodPlanningCard extends HTMLElement {
       this._renderGrid();
     });
     this._chips.append(this._quickChip);
+    this._offerChip = el("button", { cls: "chip offers", text: this._o.filter, attrs: { hidden: "" } });
+    this._offerChip.addEventListener("click", () => {
+      this._offerFilter = !this._offerFilter;
+      this._renderGrid();
+    });
+    this._chips.append(this._offerChip);
+    this._weekBox = el("div", { cls: "week" });
     this._categoryChips = el("div", { cls: "categories" });
     this._grid = el("div", { cls: "grid" });
     this._empty = el("p", { cls: "empty", attrs: { hidden: "" } });
@@ -507,6 +741,7 @@ class FoodPlanningCard extends HTMLElement {
       el("h1", { text: this._config.title || t.title }),
       el("div", { cls: "add" }, this._input, this._addButton),
       this._status,
+      this._weekBox,
       el("div", { cls: "tools" }, this._searchInput, this._chips),
       this._categoryChips,
       this._grid,
@@ -694,8 +929,12 @@ class FoodPlanningCard extends HTMLElement {
       if (chip.dataset.filter) chip.classList.toggle("active", chip.dataset.filter === this._filter);
     }
     this._quickChip.classList.toggle("active", this._quick);
+    this._offerChip.toggleAttribute("hidden", !this._offersEnabled);
+    const offerFilter = this._offerFilter && this._offersEnabled;
+    this._offerChip.classList.toggle("active", offerFilter);
     const shown = recipes.filter((r) => {
       if (this._filter !== "all" && r.status !== this._filter) return false;
+      if (offerFilter && !Object.keys(r.offers || {}).length) return false;
       if (this._quick && !(r.total_minutes && r.total_minutes <= QUICK_MINUTES)) return false;
       if (this._category && !(r.categories || []).includes(this._category)) return false;
       if (!this._search) return true;
@@ -706,6 +945,7 @@ class FoodPlanningCard extends HTMLElement {
     });
 
     if (this._quick) shown.sort((a, b) => a.total_minutes - b.total_minutes);
+    else if (offerFilter) shown.sort((a, b) => offerScore(b) - offerScore(a));
     this._grid.replaceChildren(...shown.map((recipe) => this._tile(recipe)));
     let emptyText = "";
     if (this._recipes !== null) {
@@ -719,7 +959,14 @@ class FoodPlanningCard extends HTMLElement {
   _tile(recipe) {
     const t = this._t;
     const tile = el("button", { cls: "tile", attrs: { type: "button" } });
-    tile.append(recipeImage(recipe));
+    const offers = Object.values(recipe.offers || {});
+    if (this._offersEnabled && offers.length) {
+      const deals = offers.filter((list) => list[0].deal).length;
+      const badge = el("span", { cls: `offer-tag${deals ? "" : " weak"}`, text: this._o.onOffer(deals || offers.length) });
+      tile.append(el("span", { cls: "imgwrap" }, recipeImage(recipe), badge));
+    } else {
+      tile.append(recipeImage(recipe));
+    }
     if (recipe.status === "ready") tile.append(el("span", { cls: "badge ready", text: t.ready }));
     if (recipe.status === "missing") tile.append(el("span", { cls: "badge", text: t.missingBadge(recipe.missing.length) }));
     if (recipe.total_minutes) {
@@ -736,6 +983,107 @@ class FoodPlanningCard extends HTMLElement {
     return tile;
   }
 
+  _weekInfo() {
+    return {
+      enabled: this._weeklyEnabled,
+      offers: this._offersEnabled,
+      uids: new Set((this._week?.dinners || []).filter((d) => !d.cooked).map((d) => d.recipe_uid)),
+    };
+  }
+
+  async _weekAction(action, uid, button) {
+    if (button) button.disabled = true;
+    if (action === "plan") this._setStatus(this._t.weekPlanning);
+    try {
+      const result = await this._hass.callWS({ type: `${DOMAIN}/week/update`, action, ...(uid ? { uid } : {}) });
+      if (action === "shop") this._setStatus(this._t.weekShopped(result?.added ?? 0));
+      else if (action === "plan") this._setStatus("");
+    } catch (err) {
+      this._setStatus(errorMessage(err), true);
+      if (button) button.disabled = false;
+    }
+  }
+
+  _renderWeek() {
+    if (!this._weekBox) return;
+    const t = this._t;
+    if (!this._weeklyEnabled) {
+      this._weekBox.replaceChildren();
+      return;
+    }
+    const week = this._week;
+    const dinners = week?.dinners || [];
+    const header = el("header", {}, el("h2", { text: t.weekTitle }));
+    if (!dinners.length) {
+      const plan = el("button", { cls: "secondary", text: t.weekPlan });
+      plan.addEventListener("click", () => this._weekAction("plan", null, plan));
+      this._weekBox.replaceChildren(header, el("div", { cls: "wempty" }, el("span", { text: t.weekEmpty }), plan));
+      return;
+    }
+    const cooked = dinners.filter((d) => d.cooked).length;
+    header.append(el("span", { cls: "progress", text: t.weekProgress(cooked, dinners.length, (week.week || "").split("-W")[1] || "") }));
+    const byUid = new Map((this._recipes || []).map((r) => [r.uid, r]));
+    const rows = dinners.map((dinner) => this._weekRow(dinner, byUid.get(dinner.recipe_uid)));
+    const toBuy = new Set(dinners.filter((d) => !d.cooked).flatMap((d) => d.missing || []));
+    const shop = el("button", { cls: "grow", text: t.weekShop(toBuy.size) });
+    shop.disabled = toBuy.size === 0;
+    shop.addEventListener("click", () => this._weekAction("shop", null, shop));
+    const again = el("button", { cls: "secondary", text: t.weekNew });
+    again.addEventListener("click", () => this._weekAction("plan", null, again));
+    this._weekBox.replaceChildren(header, ...rows, el("footer", {}, shop, again));
+  }
+
+  _weekRow(dinner, recipe) {
+    const t = this._t;
+    const thumb = recipe ? recipeImage(recipe, "thumb") : el("div", { cls: "thumb placeholder", text: "💡" });
+    const info = el("div", { cls: "open" });
+    if (dinner.idea) info.append(el("div", { cls: "from", text: t.weekIdea }));
+    else if (dinner.rolled_over && !dinner.cooked) info.append(el("div", { cls: "from", text: t.weekRolled }));
+    info.append(el("div", { cls: "title", text: dinner.title }));
+    const meta = el("div", { cls: "dmeta" });
+    if (dinner.cooked) meta.append(el("span", { cls: "ok", text: t.weekCooked }));
+    else if (recipe) {
+      if (dinner.total_minutes) {
+        meta.append(el("span", { text: `${dinner.total_minutes <= QUICK_MINUTES ? "⚡" : "⏱"} ${formatMinutes(dinner.total_minutes)}` }));
+      }
+      if (dinner.missing && !dinner.missing.length) meta.append(el("span", { cls: "ok", text: t.ready }));
+      else if (dinner.missing?.length) meta.append(el("span", { cls: "warn", text: t.missingBadge(dinner.missing.length) }));
+      const deal = (dinner.deals || [])[0];
+      if (deal) {
+        const name = deal.product.charAt(0).toUpperCase() + deal.product.slice(1);
+        const tag = offerTag({ ...deal, deal: true }, this._o, { label: name });
+        tag.tabIndex = -1;
+        tag.style.pointerEvents = "none";
+        meta.append(tag);
+      }
+      if (dinner.added) meta.append(el("span", { text: t.weekAdded }));
+    }
+    info.append(meta);
+    if (dinner.reason && !dinner.cooked) info.append(el("div", { cls: "reason", text: dinner.reason }));
+    if (recipe) {
+      info.setAttribute("role", "button");
+      info.tabIndex = 0;
+      info.addEventListener("click", () => this._open(recipe.uid));
+      info.addEventListener("keydown", (ev) => {
+        if (ev.key === "Enter") this._open(recipe.uid);
+      });
+    }
+    const acts = el("div", { cls: "acts" });
+    const key = dinner.recipe_uid || dinner.title;
+    const act = (icon, label, action, on = false) => {
+      const button = el("button", { text: icon, attrs: { type: "button", title: label, "aria-label": label } });
+      button.classList.toggle("on", on);
+      button.addEventListener("click", () => this._weekAction(action, key, button));
+      acts.append(button);
+    };
+    if (!dinner.cooked) {
+      if (recipe) act("📌", dinner.pinned ? t.weekUnpin : t.weekPin, dinner.pinned ? "unpin" : "pin", dinner.pinned);
+      if (!dinner.pinned && !dinner.added) act("↻", t.weekSwap, "swap");
+      act("✕", t.weekRemove, "remove");
+    }
+    return el("div", { cls: `dish${dinner.cooked ? " done" : ""}` }, thumb, info, acts);
+  }
+
   _open(uid) {
     if (this._dialog) this._dialog.close();
     const dialog = document.createElement("food-planning-recipe-dialog");
@@ -745,6 +1093,7 @@ class FoodPlanningCard extends HTMLElement {
       uid,
       recipes: this._recipes || [],
       categories: this._categories,
+      week: this._weekInfo(),
       onClose: () => {
         if (this._dialog === dialog) this._dialog = null;
       },
@@ -1295,14 +1644,16 @@ class FoodPlanningRecipeDialog extends HTMLElement {
     };
   }
 
-  setup({ hass, t, uid, recipes, categories, onClose }) {
+  setup({ hass, t, uid, recipes, categories, week, onClose }) {
     this._hass = hass;
     this._t = t;
+    this._o = OFFER_STRINGS[t.lang] || OFFER_STRINGS.sv;
     this._uid = uid;
     this._onClose = onClose;
     this._doneChips = new Set();
+    this._openOffer = null;
     timerHub.connect(hass);
-    this.update(recipes, categories);
+    this.update(recipes, categories, week);
   }
 
   connectedCallback() {
@@ -1436,8 +1787,9 @@ class FoodPlanningRecipeDialog extends HTMLElement {
     if (this._onClose) this._onClose();
   }
 
-  update(recipes, categories) {
+  update(recipes, categories, week) {
     if (categories) this._categories = categories;
+    if (week) this._week = week;
     const recipe = recipes.find((r) => r.uid === this._uid);
     if (!recipe) {
       this.close();
@@ -1445,7 +1797,8 @@ class FoodPlanningRecipeDialog extends HTMLElement {
     }
     // Any change elsewhere (a shopping list tick) re-sends every recipe;
     // only re-render when this one changed.
-    const key = JSON.stringify([recipe, this._categories]);
+    const inWeek = Boolean(this._week?.uids?.has(recipe.uid));
+    const key = JSON.stringify([recipe, this._categories, this._week?.enabled, inWeek]);
     const unchanged = key === this._recipeKey;
     this._recipe = recipe;
     this._recipeKey = key;
@@ -1532,6 +1885,10 @@ class FoodPlanningRecipeDialog extends HTMLElement {
       ul.ingredients label { display: flex; align-items: baseline; gap: 10px; cursor: pointer; }
       ul.ingredients input { width: 18px; height: 18px; flex: none; margin: 0; position: relative; top: 3px; accent-color: var(--primary-color); }
       ul.ingredients .note { margin-left: auto; padding-left: 8px; white-space: nowrap; color: var(--warning-color, #ffa600); font-size: 12px; }
+      ul.ingredients .offer-tag { margin-left: auto; position: relative; top: -1px; }
+      ul.ingredients .note + .offer-tag { margin-left: 6px; }
+      ul.ingredients .offer-pop { margin-left: 28px; }
+      .offers-line { font-size: 12px; color: var(--secondary-text-color); margin: 0 0 6px; }
       ol.steps { margin: 0; padding: 0; list-style: none; counter-reset: step; }
       ol.steps li {
         counter-increment: step; position: relative; padding: 0 0 14px 40px; line-height: 1.5;
@@ -1680,7 +2037,8 @@ class FoodPlanningRecipeDialog extends HTMLElement {
       addButton.textContent = `🛒 ${t.addSelected(n)}`;
       addButton.disabled = n === 0;
     };
-    for (const text of recipe.ingredients) {
+    const offers = this._week?.offers ? recipe.offers || {} : {};
+    recipe.ingredients.forEach((text, index) => {
       const box = el("input", { attrs: { type: "checkbox" } });
       box.checked = this._selected.has(text);
       const label = el("label", {}, box, el("span", { text }));
@@ -1691,14 +2049,28 @@ class FoodPlanningRecipeDialog extends HTMLElement {
         else this._selected.delete(text);
         updateAddButton();
       });
-      ingredients.append(el("li", { cls: missingSet.has(text) ? "missing" : "" }, label));
-    }
+      const li = el("li", { cls: missingSet.has(text) ? "missing" : "" }, label);
+      const found = offers[String(index)];
+      if (found) {
+        const tag = offerTag(found[0], this._o);
+        tag.addEventListener("click", (ev) => {
+          ev.preventDefault();
+          this._openOffer = this._openOffer === index ? null : index;
+          this._render();
+        });
+        label.append(tag);
+        if (this._openOffer === index) li.append(offerDetails(found, this._o));
+      }
+      ingredients.append(li);
+    });
+    const onOffer = Object.values(offers);
     updateAddButton();
     const left = el(
       "section",
       {},
       el("h3", { text: t.ingredients }),
       el("p", { cls: "hint", text: t.selectHint }),
+      onOffer.length ? el("p", { cls: "offers-line", text: this._o.onOffer(onOffer.length) }) : null,
       ingredients
     );
     const right = el("section", {});
@@ -1723,11 +2095,28 @@ class FoodPlanningRecipeDialog extends HTMLElement {
     );
     const cookedButton = el("button", { cls: "secondary", text: `✓ ${t.cooked}` });
     cookedButton.addEventListener("click", () => this._markCooked(cookedButton));
+    let weekButton = null;
+    if (this._week?.enabled) {
+      const inWeek = this._week.uids?.has(recipe.uid);
+      weekButton = el("button", { cls: "secondary", text: inWeek ? t.weekIn : t.weekAdd });
+      weekButton.disabled = Boolean(inWeek);
+      weekButton.addEventListener("click", async () => {
+        weekButton.disabled = true;
+        try {
+          await this._hass.callWS({ type: `${DOMAIN}/week/update`, action: "add", uid: recipe.uid });
+          this._setStatus(t.weekAddedToast);
+        } catch (err) {
+          this._setStatus(errorMessage(err), true);
+          weekButton.disabled = false;
+        }
+      });
+    }
     const actions = el(
       "div",
       { cls: "actions" },
       addButton,
       cookedButton,
+      weekButton,
       el("span", { cls: "spacer" })
     );
     if (this._confirmingDelete) {
@@ -2107,6 +2496,9 @@ class FoodPlanningListCard extends HTMLElement {
     this._showDone = false;
     this._unsub = null;
     this._subscribedTo = null;
+    this._offers = null;
+    this._offersUnsub = null;
+    this._openOffer = null;
   }
 
   setConfig(config) {
@@ -2116,6 +2508,7 @@ class FoodPlanningListCard extends HTMLElement {
     this._config = config;
     const strings = LIST_STRINGS[config.language] || LIST_STRINGS.sv;
     this._t = { ...strings, ...strings[config.list] };
+    this._o = OFFER_STRINGS[config.language] || OFFER_STRINGS.sv;
     this._render();
   }
 
@@ -2151,10 +2544,10 @@ class FoodPlanningListCard extends HTMLElement {
   }
 
   _unsubscribe() {
-    if (this._unsub) {
-      const unsub = this._unsub;
-      this._unsub = null;
-      unsub.then((fn) => fn()).catch(() => {});
+    for (const key of ["_unsub", "_offersUnsub"]) {
+      const unsub = this[key];
+      this[key] = null;
+      if (unsub) unsub.then((fn) => fn()).catch(() => {});
     }
   }
 
@@ -2169,6 +2562,70 @@ class FoodPlanningListCard extends HTMLElement {
       { type: "todo/item/subscribe", entity_id: this._entity }
     );
     this._unsub.catch((err) => this._setStatus(errorMessage(err), true));
+    // Offers are optional: an older integration or offers turned off
+    // just means no tags.
+    this._offersUnsub = this._hass.connection.subscribeMessage(
+      (msg) => {
+        this._offers = msg.enabled ? msg : null;
+        this._render();
+      },
+      { type: `${DOMAIN}/offers/items/subscribe` }
+    );
+    this._offersUnsub.catch(() => {});
+  }
+
+  /** At home items hidden from the stock-up strip, until next week. */
+  _hiddenRefill() {
+    const week = isoWeek(new Date());
+    try {
+      const saved = JSON.parse(localStorage.getItem("food_planning.refill_hidden") || "{}");
+      return saved.week === week ? new Set(saved.keys) : new Set();
+    } catch (_err) {
+      return new Set();
+    }
+  }
+
+  _hideRefill(key) {
+    const keys = this._hiddenRefill();
+    keys.add(key);
+    try {
+      localStorage.setItem("food_planning.refill_hidden", JSON.stringify({ week: isoWeek(new Date()), keys: [...keys] }));
+    } catch (_err) {
+      /* private mode: hidden until reload */
+    }
+    this._render();
+  }
+
+  _refillStrip() {
+    const o = this._o;
+    const hidden = this._hiddenRefill();
+    const refill = (this._offers?.refill || []).filter((r) => !hidden.has(nameKey(r.summary)));
+    if (!refill.length) return null;
+    const rows = refill.map((r) => {
+      const add = el("button", { cls: "icon-button add", text: "+", attrs: { title: o.refillAdd, "aria-label": o.refillAdd } });
+      add.addEventListener("click", async () => {
+        add.disabled = true;
+        const shopping = findListEntity(this._hass, "shopping_list", "todo.food_planning_shopping_list");
+        try {
+          await this._hass.callWS({
+            type: "call_service",
+            domain: "todo",
+            service: "add_item",
+            service_data: { item: r.summary },
+            target: { entity_id: shopping },
+          });
+          this._setStatus(o.added(r.summary));
+          this._hideRefill(nameKey(r.summary));
+        } catch (err) {
+          this._setStatus(errorMessage(err), true);
+          add.disabled = false;
+        }
+      });
+      const hide = el("button", { cls: "icon-button", text: "✕", attrs: { title: o.refillHide, "aria-label": o.refillHide } });
+      hide.addEventListener("click", () => this._hideRefill(nameKey(r.summary)));
+      return el("li", {}, el("span", { cls: "text", text: r.summary }), offerTag(r.offer, o, { chain: true }), add, hide);
+    });
+    return el("div", { cls: "refill" }, el("h2", {}, el("span", { text: o.refill })), el("ul", {}, ...rows));
   }
 
   async _call(service, data) {
@@ -2235,6 +2692,15 @@ class FoodPlanningListCard extends HTMLElement {
       li.editing input[type=text] { flex: 1 1 200px; }
       .empty { color: var(--secondary-text-color); margin: 16px 0 4px; }
       .note { font-size: 12px; color: var(--secondary-text-color); margin: 12px 0 0; }
+      li.has-offer { flex-wrap: wrap; }
+      li .offer-pop { flex-basis: 100%; margin-left: 30px; }
+      .refill { margin-top: 8px; padding: 4px 12px 8px; border-radius: var(--fp-radius); background: color-mix(in srgb, #ffd21f 10%, transparent); }
+      .refill h2 { margin-top: 8px; }
+      .refill li { border-bottom: none; padding: 3px 0; }
+      .refill li .text { cursor: default; }
+      .refill .icon-button.add { color: var(--primary-color); font-size: 20px; }
+      .refill .icon-button.add:hover { color: var(--primary-color); }
+      .savings { font-size: 12px; color: var(--secondary-text-color); margin: 8px 0 0; }
     `,
     });
 
@@ -2278,10 +2744,27 @@ class FoodPlanningListCard extends HTMLElement {
     this._status = el("p", { cls: "status", attrs: { hidden: "" } });
 
     const content = [];
+    if (this._config.list === "pantry" && this._offers) {
+      const strip = this._refillStrip();
+      if (strip) content.push(strip);
+    }
     if (this._items !== null && !items.length) content.push(el("p", { cls: "empty", text: t.empty }));
     if (open.length) {
       content.push(el("h2", {}, el("span", { text: `${t.open} (${open.length})` })));
       content.push(el("ul", {}, ...open.map((item) => this._row(item))));
+      if (this._config.list === "shopping" && this._offers) {
+        const seen = new Set();
+        let saving = 0;
+        for (const item of open) {
+          const found = this._offers.items?.[nameKey(item.summary)];
+          const key = found && `${found[0].store}|${found[0].heading}`;
+          if (found && !seen.has(key)) {
+            seen.add(key);
+            saving += found[0].saving || 0;
+          }
+        }
+        if (saving > 0) content.push(el("p", { cls: "savings", text: this._o.listSavings(formatKr(saving)) }));
+      }
     }
     if (done.length) {
       const toggle = el("button", { cls: "secondary", text: this._showDone ? t.hideDone : t.showDone(done.length) });
@@ -2369,7 +2852,17 @@ class FoodPlanningListCard extends HTMLElement {
     });
     const remove = el("button", { cls: "icon-button", text: "✕", attrs: { "aria-label": t.remove, title: t.remove } });
     remove.addEventListener("click", () => this._call("remove_item", { item: [item.uid] }));
-    return el("li", { cls: isDone ? "done" : "" }, check, text, remove);
+    // At home items on offer show in the stock-up strip instead.
+    const found = !isDone && this._config.list === "shopping" && this._offers?.items?.[nameKey(item.summary)];
+    if (!found) return el("li", { cls: isDone ? "done" : "" }, check, text, remove);
+    const tag = offerTag(found[0], this._o, { chain: true });
+    tag.addEventListener("click", () => {
+      this._openOffer = this._openOffer === item.uid ? null : item.uid;
+      this._render();
+    });
+    const li = el("li", { cls: "has-offer" }, check, text, tag, remove);
+    if (this._openOffer === item.uid) li.append(offerDetails(found, this._o));
+    return li;
   }
 }
 

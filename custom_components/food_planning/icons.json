@@ -22,11 +22,63 @@
             }
           }
         }
+      },
+      "weekly_dinners": {
+        "default": "mdi:calendar-week",
+        "state_attributes": {
+          "event_type": {
+            "state": {
+              "planned": "mdi:calendar-check",
+              "cooked": "mdi:pot-steam"
+            }
+          }
+        }
       }
     },
     "sensor": {
       "next_timer": {
         "default": "mdi:timer-sand"
+      },
+      "recipes": {
+        "default": "mdi:book-open-variant"
+      },
+      "ready_recipes": {
+        "default": "mdi:chef-hat"
+      },
+      "last_cooked": {
+        "default": "mdi:pot-steam"
+      },
+      "weekly_dinners": {
+        "default": "mdi:calendar-week"
+      },
+      "dinner_tonight": {
+        "default": "mdi:silverware-fork-knife"
+      },
+      "week_to_buy": {
+        "default": "mdi:cart-arrow-down"
+      },
+      "offer_matches": {
+        "default": "mdi:tag-heart"
+      },
+      "shopping_savings": {
+        "default": "mdi:piggy-bank-outline"
+      },
+      "best_deal": {
+        "default": "mdi:sale"
+      },
+      "offers": {
+        "default": "mdi:tag-multiple"
+      },
+      "flyer_valid_until": {
+        "default": "mdi:newspaper-variant-outline"
+      }
+    },
+    "binary_sensor": {
+      "offers_source": {
+        "default": "mdi:cloud-check-outline",
+        "state": {
+          "off": "mdi:cloud-off-outline"
+        }
       }
     }
   },
@@ -54,6 +106,30 @@
     },
     "extend_timer": {
       "service": "mdi:timer-plus-outline"
+    },
+    "mark_cooked": {
+      "service": "mdi:pot-steam"
+    },
+    "plan_week": {
+      "service": "mdi:calendar-refresh"
+    },
+    "get_weekly_dinners": {
+      "service": "mdi:calendar-week"
+    },
+    "add_to_week": {
+      "service": "mdi:calendar-plus"
+    },
+    "remove_from_week": {
+      "service": "mdi:calendar-remove"
+    },
+    "add_week_to_shopping_list": {
+      "service": "mdi:cart-plus"
+    },
+    "get_offers": {
+      "service": "mdi:tag-multiple"
+    },
+    "search_offers": {
+      "service": "mdi:tag-search"
     }
   }
 }

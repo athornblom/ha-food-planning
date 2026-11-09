@@ -216,6 +216,74 @@ sends a phone notification when a timer finishes:
 
 Finished timers stay (ringing) until dismissed, at most 15 minutes.
 
+### Veckans middagar (weekly dinners)
+
+Every Monday morning (day, time and number configurable) the recipe view
+opens with a few dinner suggestions from **your own recipes**. It's a
+loose pool, not a schedule: no days, cook them in any order, or not at
+all. Nothing needs updating afterwards.
+
+- **Picking:** recipes are scored in code: everything at home, quick
+  (⚡ ≤ 30 min), not cooked in the last two weeks, and, with offers on,
+  main ingredients on offer with a real discount. The AI then picks among
+  the best 15 for a varied week and writes a short reason ("kycklingfilé
+  −20 % på Willys"). If the AI fails, the best scores are used.
+- **You always win:** ↻ swaps a dinner (instantly, no AI), ✕ removes it
+  for the week, 📌 keeps it. **＋ Lägg i veckan** in a recipe adds your
+  own pick. Pinned and added dinners survive **Ny plan** and next week.
+- **Cooked:** pressing **Lagad** ticks it off. Uncooked dinners whose
+  ingredients you bought roll over to next week; the rest are replaced.
+- **🛒 Handla till veckan** adds what's missing for the dinners not cooked
+  yet, minus what's at home.
+
+### Erbjudanden (store offers, optional)
+
+> [!CAUTION]
+> Offers come from Tjek's flyer API, the backend of eReklamblad. It is
+> **unofficial and undocumented** and may change or stop working at any
+> time. When it does, only the offer sensors go unavailable and the tags
+> disappear; everything else keeps working.
+
+Turn on **Show offers from stores** under **Configure** and pick stores
+near home (ICA, Willys, Hemköp and Coop have a flyer per store). The
+flyers are fetched on Monday at 02:30 and every 6 hours, and each new
+offer gets a product name (one AI batch per week), so it matches your
+ingredients without further AI calls.
+
+- A yellow price tag shows on ingredients and shopping items that are on
+  offer at your stores: the price first, the discount next to it when the
+  flyer states it (`🏷 34:90 −13 %`, `🏷 2 för 30 −25 %`). Tap it for the
+  store, ordinary price, saving, comparison price and end date. A faded
+  tag means the discount is unknown or small.
+- Discounts are only taken from what the flyer states (ordinary price,
+  "Spara 5:00", or the lowest price of the last 30 days). ICA and Coop
+  rarely state one, so their tags usually show the price only.
+- **🏷 Extrapris** in the recipe view shows recipes with ingredients on
+  offer, the most first.
+- At home shows a short **Fyll på – extrapris** strip for things you
+  usually have that are on offer, with + to put them on the list.
+
+### Sensors
+
+Everything comes from data the integration already has; no sensor calls
+the AI or the internet.
+
+| Entity | State |
+| --- | --- |
+| `sensor.food_planning_weekly_dinners` | Dinners left to cook this week; `dinners` attribute |
+| `sensor.food_planning_dinner_tonight` | The best open dinner for today, with picture |
+| `sensor.food_planning_week_to_buy` | Ingredients missing for the week, not on the list |
+| `sensor.food_planning_ready_recipes` | Recipes with everything at home |
+| `sensor.food_planning_recipes` | Number of recipes; per category |
+| `sensor.food_planning_last_cooked` | When a recipe was last cooked |
+| `event.food_planning_weekly_dinners` | Fires `planned` and `cooked` |
+| `sensor.food_planning_offer_matches` | Your products on offer (offers on) |
+| `sensor.food_planning_shopping_savings` | Kronor saved on the list, stated discounts only |
+| `sensor.food_planning_best_deal` | Your product with the biggest discount |
+| `sensor.food_planning_offers_<store>` | Offers at a store now; flyer dates as attributes |
+| `sensor.food_planning_flyer_valid_until_<store>` | When the store's flyer ends |
+| `binary_sensor.food_planning_offers_source` | Off when the flyer API fails |
+
 ### Actions
 
 - `food_planning.import_recipe`: `url` **or** `text`, plus optional
@@ -232,6 +300,18 @@ Finished timers stay (ringing) until dismissed, at most 15 minutes.
 - `food_planning.pause_timer`, `resume_timer`, `cancel_timer`: optional
   `timer` (ID or label); without it, all timers.
 - `food_planning.extend_timer`: `duration` to add, optional `timer`.
+- `food_planning.mark_cooked`: `recipe`. Ticks it off the week and
+  updates At home.
+- `food_planning.plan_week`: optional `count`. Keeps pinned and added
+  dinners; returns the plan.
+- `food_planning.get_weekly_dinners`: returns the plan with reasons,
+  missing ingredients and offers.
+- `food_planning.add_to_week`, `remove_from_week`: `recipe`.
+- `food_planning.add_week_to_shopping_list`: what's missing for the week.
+- `food_planning.get_offers`: `store` (ID or name). Returns its current
+  offers, biggest discount first.
+- `food_planning.search_offers`: `query`, optional `stores` and
+  `min_discount`. Searches the fetched offers, not the API.
 
 ## Configuration
 
@@ -246,6 +326,10 @@ Finished timers stay (ringing) until dismissed, at most 15 minutes.
 - **Only administrators change recipes:** off by default. When on, only
   administrator users can edit or delete recipes; everyone can still
   import, shop and cook.
+- **Suggest dinners every week:** on by default; day, time (Monday 07:00),
+  number (5) and whether the AI may add one new idea in the next step.
+- **Show offers from stores:** off by default; radius from home (3 km),
+  smallest discount to highlight (10 %) and stores in the next steps.
 - **Recipe categories:** one per line. Removing one also takes it off the
   recipes that had it. Easier from the recipe card's **✎ Kategorier**.
 
@@ -254,7 +338,8 @@ All can be changed later under the integration's **Configure** button.
 ## Data, backups and removal
 
 - Recipes and the shopping list are stored in
-  `/config/.storage/food_planning` (timers in `food_planning.timers`), and
+  `/config/.storage/food_planning` (timers in `food_planning.timers`,
+  fetched offers in `food_planning.offers`), and
   recipe images in
   `/config/food_planning/images` (saved at import, since some image links,
   like TikTok's, expire). Both are separate from the code, so updates never

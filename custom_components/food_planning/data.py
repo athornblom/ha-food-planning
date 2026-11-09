@@ -2,19 +2,34 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from collections.abc import Callable
+from dataclasses import dataclass, field
+import logging
+from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 
-from .const import CONF_AI_TASK_ENTITY, CONF_LANGUAGE, DEFAULT_LANGUAGE, DOMAIN
+from .const import (
+    CONF_AI_TASK_ENTITY,
+    CONF_LANGUAGE,
+    CONF_UPDATE_PANTRY,
+    DEFAULT_LANGUAGE,
+    DEFAULT_UPDATE_PANTRY,
+    DOMAIN,
+)
 from .extraction import RecipeSource, async_extract_recipe, async_fetch_source
 from .images import async_delete_image, async_save_image
 from .merge import ListMerger
+from .offer_lookup import OfferLookup
+from .pantry import async_consume_recipe
 from .pantry_match import PantryMatcher
 from .store import PANTRY, SHOPPING, FoodPlanningStore, Recipe
 from .timers import TimerManager
+from .weekly import EVENT_COOKED, WeeklyPlanner
+
+_LOGGER = logging.getLogger(__name__)
 
 type FoodPlanningConfigEntry = ConfigEntry[FoodPlanningData]
 
@@ -30,6 +45,15 @@ class FoodPlanningData:
     matcher: PantryMatcher
     # Cooking timers.
     timers: TimerManager
+    # Veckans middagar.
+    planner: WeeklyPlanner
+    # Set by the optional offers module while it's turned on.
+    offers: OfferLookup | None = None
+    # Entity factories added by optional modules, by platform: called by
+    # the core platforms with their async_add_entities.
+    entity_hooks: dict[str, list[Callable[[Callable[..., Any]], None]]] = field(
+        default_factory=dict
+    )
 
 
 async def async_import_recipe(
@@ -130,3 +154,35 @@ async def async_delete_recipe(
     await store.async_save()
     await async_delete_image(hass, recipe.image)
     return True
+
+
+async def async_mark_cooked(
+    hass: HomeAssistant, entry: FoodPlanningConfigEntry, recipe: Recipe
+) -> None:
+    """Remember a cooked recipe, tick it off the week, update At home."""
+    data = entry.runtime_data
+    data.store.mark_cooked(recipe)
+    await data.store.async_save()
+    data.planner.fire(EVENT_COOKED, {"recipe": recipe.title, "uid": recipe.uid})
+    if entry.options.get(CONF_UPDATE_PANTRY, DEFAULT_UPDATE_PANTRY):
+        entry.async_create_background_task(
+            hass,
+            async_consume_recipe(hass, entry, recipe),
+            "food_planning pantry update",
+        )
+
+
+def async_add_hooked_entities(
+    entry: FoodPlanningConfigEntry, platform: str, add: Callable[..., Any]
+) -> None:
+    """Add the entities optional modules registered for a platform.
+
+    A module that fails here is logged and skipped, never fails the core.
+    """
+    for hook in entry.runtime_data.entity_hooks.get(platform, []):
+        try:
+            hook(add)
+        except Exception:
+            _LOGGER.exception(
+                "Could not add %s entities of an optional module", platform
+            )
